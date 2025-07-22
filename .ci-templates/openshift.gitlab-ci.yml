@@ -1,0 +1,30 @@
+.openshift-deploy:
+  stage: promote
+  image: openshift/origin-cli:v3.11.0
+
+  script:
+    - echo "Deploying $APP_NAME:$IMAGE_TAG to OpenShift project $OC_PROJECT"
+
+    # If authentication is needed
+    # if [[ -n "$OC_TOKEN" && -n "$OC_SERVER" ]]; then
+    #   echo "Authenticating to OpenShift"
+    #   oc login --token="$OC_TOKEN" --server="$OC_SERVER"
+    # else
+    #   echo "Skipping oc login — assuming runner has context"
+    # fi
+
+    # echo "Switching to project: $OC_PROJECT"
+    # oc project "$OC_PROJECT"
+
+    # echo "Updating image on deployment/$APP_NAME to $IMAGE_NAME:$IMAGE_TAG"
+    # oc set image deployment/"$APP_NAME" "$APP_NAME=$IMAGE_NAME:$IMAGE_TAG"
+
+    # echo "Restarting deployment/$APP_NAME"
+    # oc rollout restart deployment/"$APP_NAME"
+
+    # echo "Waiting for rollout status"
+    # oc rollout status deployment/"$APP_NAME" --watch
+
+  environment:
+    name: $TARGET_ENV
+    url: $TARGET_URL
