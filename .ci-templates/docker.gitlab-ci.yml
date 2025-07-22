@@ -16,10 +16,10 @@
 .build-common:
   script:
     - echo "🔧 Starting Docker build for $APP_NAME"
-    - echo "🛠️  Building image: $IMAGE_ENV_PATH:$SHORT_SHA"
+    - echo "🛠️  Building image $IMAGE_ENV_PATH:$SHORT_SHA"
     - docker build -t "$IMAGE_ENV_PATH:$SHORT_SHA" .
 
-    - echo "🔖 Tagging image as latest: $IMAGE_ENV_PATH:latest"
+    - echo "🔖 Tagging image as latest $IMAGE_ENV_PATH:latest"
     - docker tag "$IMAGE_ENV_PATH:$SHORT_SHA" "$IMAGE_ENV_PATH:latest"
 
     - |
