@@ -15,27 +15,27 @@
 
 .build-common:
   script:
-    - echo "🔧 Starting Docker build for $APP_NAME"
-    - echo "🛠️  Building image $IMAGE_ENV_PATH:$SHORT_SHA"
+    - echo "Starting Docker build for $APP_NAME"
+    - echo "Building image $IMAGE_ENV_PATH:$SHORT_SHA"
     - docker build -t "$IMAGE_ENV_PATH:$SHORT_SHA" .
 
-    - echo "🔖 Tagging image as latest $IMAGE_ENV_PATH:latest"
+    - echo "Tagging image as latest $IMAGE_ENV_PATH:latest"
     - docker tag "$IMAGE_ENV_PATH:$SHORT_SHA" "$IMAGE_ENV_PATH:latest"
 
     - |
       if [ "$PUSH_IMAGE" = "true" ]; then
-        echo "📦 PUSH_IMAGE=true — Pushing tags to registry..."
+        echo "PUSH_IMAGE=true — Pushing tags to registry..."
         docker push "$IMAGE_ENV_PATH:$SHORT_SHA"
         docker push "$IMAGE_ENV_PATH:latest"
-        echo "✅ Image pushed: $IMAGE_ENV_PATH:$SHORT_SHA"
-        echo "✅ Image pushed: $IMAGE_ENV_PATH:latest"
+        echo "Image pushed: $IMAGE_ENV_PATH:$SHORT_SHA"
+        echo "Image pushed: $IMAGE_ENV_PATH:latest"
 
         DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE_ENV_PATH:$SHORT_SHA" || true)
-        echo "🧬 Image digest: $DIGEST"
+        echo "Image digest: $DIGEST"
       else
-        echo "🚫 PUSH_IMAGE=false — skipping docker push."
-        echo "🧪 Built image is available locally but was not pushed."
+        echo "PUSH_IMAGE=false — skipping docker push."
+        echo "Built image is available locally but was not pushed."
       fi
 
-    - echo "📌 Final local images for $APP_NAME:"
-    - docker images "$IMAGE_ENV_PATH" --format '→ {{.Repository}}:{{.Tag}} ({{.Size}})'
+    - echo "Final local images for $APP_NAME:"
+    - docker images "$IMAGE_ENV_PATH" --format '{{.Repository}}:{{.Tag}} ({{.Size}})'
