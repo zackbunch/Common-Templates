@@ -46,6 +46,7 @@
       else
         echo "PUSH_IMAGE=false — skipping docker push."
         echo "Built image is available locally but was not pushed."
+        echo "IMAGE_DIGEST=skipped" >> image-digest.env
       fi
 
     - echo "Final local images for $APP_NAME:"
