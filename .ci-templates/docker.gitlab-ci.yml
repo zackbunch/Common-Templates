@@ -9,7 +9,7 @@
       alias: docker
   before_script:
     - set -euxo pipefail
-    - echo "${CI_REGISTRY_PASSWORD}" | docker login -u "${CI_REGISTRY_USER}" --password-stdin "${CI_REGISTRY}"
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
   after_script:
     - docker logout "$CI_REGISTRY" || true
 
@@ -24,22 +24,11 @@
 
     - |
       if [ "$PUSH_IMAGE" = "true" ]; then
-        echo "PUSH_IMAGE=true — Pushing SHA and latest tags..."
+        echo "PUSH_IMAGE=true — Pushing tags to registry..."
         docker push "$IMAGE_ENV_PATH:$SHORT_SHA"
         docker push "$IMAGE_ENV_PATH:latest"
-
-        if [ -n "$TAG_EXTRA" ]; then
-          if [ "$PULL_BEFORE_TAG" = "true" ]; then
-            echo "Pulling image before retagging..."
-            docker pull "$IMAGE_ENV_PATH:$SHORT_SHA"
-          fi
-
-          for tag in $TAG_EXTRA; do
-            echo "Tagging $IMAGE_ENV_PATH:$tag"
-            docker tag "$IMAGE_ENV_PATH:$SHORT_SHA" "$IMAGE_ENV_PATH:$tag"
-            docker push "$IMAGE_ENV_PATH:$tag"
-          done
-        fi
+        echo "Image pushed: $IMAGE_ENV_PATH:$SHORT_SHA"
+        echo "Image pushed: $IMAGE_ENV_PATH:latest"
 
         DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE_ENV_PATH:$SHORT_SHA" || true)
         echo "Image digest: $DIGEST"
