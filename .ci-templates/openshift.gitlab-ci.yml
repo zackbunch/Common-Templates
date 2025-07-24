@@ -1,5 +1,5 @@
 .openshift-deploy:
-  stage: promote
+  stage: deploy
   image: openshift/origin-cli:v3.11.0
 
   script:
