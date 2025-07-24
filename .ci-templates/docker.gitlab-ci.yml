@@ -9,7 +9,7 @@
       alias: docker
   before_script:
     - set -euxo pipefail
-    echo "${CI_REGISTRY_PASSWORD}" | docker login -u "${CI_REGISTRY_USER}" --password-stdin "${CI_REGISTRY}"
+    - echo "${CI_REGISTRY_PASSWORD}" | docker login -u "${CI_REGISTRY_USER}" --password-stdin "${CI_REGISTRY}"
   after_script:
     - docker logout "$CI_REGISTRY" || true
 
