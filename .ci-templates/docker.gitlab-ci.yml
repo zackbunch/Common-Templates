@@ -17,30 +17,40 @@
 .build-common:
   script:
     - echo "Starting Docker build for $APP_NAME"
-    - echo "Building image $IMAGE_ENV_PATH:$SHORT_SHA"
-    - docker build --pull -t "$IMAGE_ENV_PATH:$SHORT_SHA" .
+
+    - |
+      if [ -n "$CI_COMMIT_TAG" ]; then
+        IMAGE_TAG="$CI_COMMIT_TAG"
+        echo "Detected tag: using IMAGE_TAG=$IMAGE_TAG"
+      else
+        IMAGE_TAG="$SHORT_SHA"
+        echo "No tag detected: using IMAGE_TAG=$IMAGE_TAG"
+      fi
+
+    - echo "Building image $IMAGE_ENV_PATH:$IMAGE_TAG"
+    - docker build --pull -t "$IMAGE_ENV_PATH:$IMAGE_TAG" .
 
     - |
       if [ "${PUSH_LATEST:-true}" != "false" ]; then
-        echo "Tagging image as latest $IMAGE_ENV_PATH:latest"
-        docker tag "$IMAGE_ENV_PATH:$SHORT_SHA" "$IMAGE_ENV_PATH:latest"
+        echo "Tagging image as latest: $IMAGE_ENV_PATH:latest"
+        docker tag "$IMAGE_ENV_PATH:$IMAGE_TAG" "$IMAGE_ENV_PATH:latest"
       else
         echo "PUSH_LATEST=false — skipping latest tag."
       fi
 
     - |
       if [ "$PUSH_IMAGE" = "true" ]; then
-        echo "PUSH_IMAGE=true — Pushing tags to registry..."
-        docker push "$IMAGE_ENV_PATH:$SHORT_SHA"
+        echo "PUSH_IMAGE=true — Pushing image $IMAGE_TAG to registry..."
+        docker push "$IMAGE_ENV_PATH:$IMAGE_TAG"
 
         if [ "${PUSH_LATEST:-true}" != "false" ]; then
           docker push "$IMAGE_ENV_PATH:latest"
           echo "Image pushed: $IMAGE_ENV_PATH:latest"
         fi
 
-        echo "Image pushed: $IMAGE_ENV_PATH:$SHORT_SHA"
+        echo "Image pushed: $IMAGE_ENV_PATH:$IMAGE_TAG"
 
-        DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE_ENV_PATH:$SHORT_SHA" || true)
+        DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE_ENV_PATH:$IMAGE_TAG" || true)
         echo "Image digest: $DIGEST"
         echo "IMAGE_DIGEST=$DIGEST" >> image-digest.env
       else
