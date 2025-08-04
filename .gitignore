@@ -1,0 +1,22 @@
+# Compiled code
+*.o
+*.exe
+/bin/
+/dist/
+
+# Dependencies
+node_modules/
+vendor/
+
+# Logs and temporary files
+*.log
+*.tmp
+*.lock
+
+# IDE and editor files
+.idea/
+.vscode/
+.DS_Store
+
+# Sensitive files
+.env
