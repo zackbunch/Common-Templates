@@ -47,14 +47,24 @@
 
   script:
     - |
+      # Debug info
+      echo "PWD: $(pwd)"
+      echo "IMAGE_PATH='$IMAGE_PATH'"
+      echo "IMAGE_ENV_PATH='$IMAGE_ENV_PATH'"
+      echo "DOCKERFILE='$DOCKERFILE'"
+
+      # Fail fast if IMAGE_PATH is empty
+      if [ -z "$IMAGE_PATH" ]; then
+        echo "ERROR: IMAGE_PATH is empty"
+        exit 1
+      fi
+
       DOCKERFILE="${DOCKERFILE:-Dockerfile}"
 
       # Determine image tag based on TAG_MODE
       if [ "${TAG_MODE}" = "static" ]; then
-        # Static mode: tag is just the suffix (like 3.12)
         IMAGE_TAG="${TAG_SUFFIX:-latest}"
       else
-        # Versioned mode: commit-based tag
         if [ "${RELEASE_IMAGE}" = "true" ]; then
           if [ -z "${CI_COMMIT_TAG:-}" ]; then
             echo "RELEASE_IMAGE=true requires a CI_COMMIT_TAG" >&2
@@ -76,11 +86,12 @@
 
       echo "Building $IMAGE_ENV_PATH:$IMAGE_TAG using $IMAGE_PATH/$DOCKERFILE"
 
-      # Build using explicit context instead of cd
+      # Use cd + docker build . for maximum portability with DinD
+      cd "$IMAGE_PATH"
       docker build --pull \
-        -f "$IMAGE_PATH/$DOCKERFILE" \
+        -f "$DOCKERFILE" \
         -t "$IMAGE_ENV_PATH:$IMAGE_TAG" \
-        "$IMAGE_PATH"
+        .
 
       # Optionally tag latest
       if [ "${TAG_LATEST}" = "true" ]; then
@@ -94,7 +105,6 @@
 
         DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE_ENV_PATH:$IMAGE_TAG" || true)
         DIGEST="${DIGEST#*@}"
-        # Always write the digest to the project root for GitLab artifacts
         echo "IMAGE_DIGEST=${DIGEST:-skipped}" > "$CI_PROJECT_DIR/image-digest.env"
       else
         echo "IMAGE_DIGEST=skipped" > "$CI_PROJECT_DIR/image-digest.env"
