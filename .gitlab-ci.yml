@@ -13,7 +13,7 @@ build_feature:
   stage: build
   extends: [".build-common"]
   variables:
-    IMAGE_PATH: "."                           # Dockerfile at root
+    DOCKER_CONTEXT: "."                           # Dockerfile at root
     IMAGE_ENV_PATH: $CI_REGISTRY_IMAGE/python
     DOCKERFILE: Dockerfile
     TAG_MODE: static                       # Use commit SHA or tag

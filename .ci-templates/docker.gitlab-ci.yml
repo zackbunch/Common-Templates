@@ -11,7 +11,7 @@
 # Usage:
 #   - Extend .build-common in your jobs
 #   - Override variables as needed:
-#       IMAGE_PATH, IMAGE_ENV_PATH, DOCKERFILE
+#       DOCKER_CONTEXT, IMAGE_ENV_PATH, DOCKERFILE
 #       TAG_MODE (versioned|static), TAG_SUFFIX
 #       PUSH_IMAGE, TAG_LATEST, RELEASE_IMAGE
 #
@@ -33,13 +33,13 @@
 .build-common:
   extends: .build-dind
   variables:
-    TAG_LATEST: "false"       # Whether to also tag :latest
-    PUSH_IMAGE: "false"       # Whether to push the built image
-    RELEASE_IMAGE: "false"    # Forces push + latest, requires a Git tag
-    TAG_MODE: "versioned"     # "versioned" default or "static"
-    TAG_SUFFIX: ""            # Optional suffix like "3.12" for static or multi-version builds
-    IMAGE_PATH: "."           # Default build context for single-image builds
-    DOCKERFILE: Dockerfile    # Default Dockerfile
+    TAG_LATEST: "false"        # Whether to also tag :latest
+    PUSH_IMAGE: "false"        # Whether to push the built image
+    RELEASE_IMAGE: "false"     # Forces push + latest, requires a Git tag
+    TAG_MODE: "versioned"      # "versioned" default or "static"
+    TAG_SUFFIX: ""             # Optional suffix like "3.12" for static or multi-version builds
+    DOCKER_CONTEXT: "."        # Default build context for single-image builds
+    DOCKERFILE: Dockerfile     # Default Dockerfile
 
   before_script:
     - set -eu
@@ -49,13 +49,13 @@
     - |
       # Debug info
       echo "PWD: $(pwd)"
-      echo "IMAGE_PATH='$IMAGE_PATH'"
+      echo "DOCKER_CONTEXT='$DOCKER_CONTEXT'"
       echo "IMAGE_ENV_PATH='$IMAGE_ENV_PATH'"
       echo "DOCKERFILE='$DOCKERFILE'"
 
-      # Fail fast if IMAGE_PATH is empty
-      if [ -z "$IMAGE_PATH" ]; then
-        echo "ERROR: IMAGE_PATH is empty"
+      # Fail fast if DOCKER_CONTEXT is empty
+      if [ -z "$DOCKER_CONTEXT" ]; then
+        echo "ERROR: DOCKER_CONTEXT is empty"
         exit 1
       fi
 
@@ -84,10 +84,10 @@
         fi
       fi
 
-      echo "Building $IMAGE_ENV_PATH:$IMAGE_TAG using $IMAGE_PATH/$DOCKERFILE"
+      echo "Building $IMAGE_ENV_PATH:$IMAGE_TAG using $DOCKER_CONTEXT/$DOCKERFILE"
 
       # Use cd + docker build . for maximum portability with DinD
-      cd "$IMAGE_PATH"
+      cd "$DOCKER_CONTEXT"
       docker build --pull \
         -f "$DOCKERFILE" \
         -t "$IMAGE_ENV_PATH:$IMAGE_TAG" \
