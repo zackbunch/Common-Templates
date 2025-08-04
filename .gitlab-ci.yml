@@ -1,0 +1,24 @@
+include:
+  # Reference your local build-common template
+  local: '.ci-templates/docker.gitlab-ci.yml'
+
+stages:
+  - build
+  - release
+
+# -----------------------------------------------------------
+# Feature branch build (build only, no push)
+# -----------------------------------------------------------
+build_feature:
+  stage: build
+  extends: [".build-common"]
+  variables:
+    IMAGE_PATH: "."                           # Dockerfile at root
+    IMAGE_ENV_PATH: $CI_REGISTRY_IMAGE/templates
+    DOCKERFILE: Dockerfile
+    TAG_MODE: versioned                       # Use commit SHA or tag
+    TAG_SUFFIX: latest
+    PUSH_IMAGE: "false"                       # Feature branch = build only
+    TAG_LATEST: "false"
+  rules:
+    - if: '$CI_COMMIT_BRANCH && $CI_COMMIT_BRANCH != "dev"'
