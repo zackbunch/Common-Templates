@@ -10,11 +10,13 @@
 .build-common:
   extends: .build-dind
   variables:
-    TAG_LATEST: "false"
-    PUSH_IMAGE: "false"
-    RELEASE_IMAGE: "false"
-    IMAGE_PATH: "."        # Default for single-image builds
-    DOCKERFILE: Dockerfile # Default for single-image builds
+    TAG_LATEST: "false"       # Whether to also tag :latest
+    PUSH_IMAGE: "false"       # Whether to push the built image
+    RELEASE_IMAGE: "false"    # Forces push + latest, requires a Git tag
+    TAG_MODE: "versioned"     # "versioned" default or "static"
+    TAG_SUFFIX: ""            # Optional suffix like "3.12" for static or multi-version builds
+    IMAGE_PATH: "."           # Default build context for single-image builds
+    DOCKERFILE: Dockerfile    # Default Dockerfile
 
   before_script:
     - set -eu
@@ -25,25 +27,37 @@
       cd "$IMAGE_PATH"
       DOCKERFILE="${DOCKERFILE:-Dockerfile}"
 
-      # Determine tag
-      if [ "${RELEASE_IMAGE}" = "true" ]; then
-        if [ -z "${CI_COMMIT_TAG:-}" ]; then
-          echo "RELEASE_IMAGE=true requires a CI_COMMIT_TAG" >&2
-          exit 1
-        fi
-        IMAGE_TAG="${CI_COMMIT_TAG}"
-        PUSH_IMAGE="true"
-        TAG_LATEST="true"
+      # Determine image tag based on TAG_MODE
+      if [ "${TAG_MODE}" = "static" ]; then
+        # Static mode: tag is just the suffix (like 3.12)
+        IMAGE_TAG="${TAG_SUFFIX:-latest}"
       else
-        IMAGE_TAG="${CI_COMMIT_TAG:-$CI_COMMIT_SHORT_SHA}"
+        # Versioned mode: commit-based tag
+        if [ "${RELEASE_IMAGE}" = "true" ]; then
+          if [ -z "${CI_COMMIT_TAG:-}" ]; then
+            echo "RELEASE_IMAGE=true requires a CI_COMMIT_TAG" >&2
+            exit 1
+          fi
+          BASE_TAG="${CI_COMMIT_TAG}"
+          PUSH_IMAGE="true"
+          TAG_LATEST="true"
+        else
+          BASE_TAG="${CI_COMMIT_TAG:-$CI_COMMIT_SHORT_SHA}"
+        fi
+
+        if [ -n "${TAG_SUFFIX:-}" ] && [ "${TAG_SUFFIX}" != "latest" ]; then
+          IMAGE_TAG="${TAG_SUFFIX}-${BASE_TAG}"
+        else
+          IMAGE_TAG="${BASE_TAG}"
+        fi
       fi
 
       echo "Building $IMAGE_ENV_PATH:$IMAGE_TAG using $IMAGE_PATH/$DOCKERFILE"
 
-      # Build & tag
+      # Build the image
       docker build --pull -f "$DOCKERFILE" -t "$IMAGE_ENV_PATH:$IMAGE_TAG" .
 
-      # Tag latest if needed
+      # Optionally tag latest
       if [ "${TAG_LATEST}" = "true" ]; then
         docker tag "$IMAGE_ENV_PATH:$IMAGE_TAG" "$IMAGE_ENV_PATH:latest"
       fi
@@ -59,3 +73,7 @@
       else
         echo "IMAGE_DIGEST=skipped" > image-digest.env
       fi
+
+  artifacts:
+    reports:
+      dotenv: image-digest.env
