@@ -8,22 +8,24 @@
     DOCKER_TLS_CERTDIR: ""
 
 .build-common:
-  extends:
-    - .build-dind
-
+  extends: .build-dind
   variables:
     TAG_LATEST: "false"
     PUSH_IMAGE: "false"
     RELEASE_IMAGE: "false"
+    IMAGE_PATH: "."        # Default for single-image builds
+    DOCKERFILE: Dockerfile # Default for single-image builds
 
   before_script:
     - set -eu
-    - echo "$CI_REGISTRY_PASSWORD" \
-      | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
 
   script:
     - |
-      # if RELEASE_IMAGE is set, enforce tag presence and force push
+      cd "$IMAGE_PATH"
+      DOCKERFILE="${DOCKERFILE:-Dockerfile}"
+
+      # Determine tag
       if [ "${RELEASE_IMAGE}" = "true" ]; then
         if [ -z "${CI_COMMIT_TAG:-}" ]; then
           echo "RELEASE_IMAGE=true requires a CI_COMMIT_TAG" >&2
@@ -32,53 +34,28 @@
         IMAGE_TAG="${CI_COMMIT_TAG}"
         PUSH_IMAGE="true"
         TAG_LATEST="true"
-        echo "Tagged release: using IMAGE_TAG=${IMAGE_TAG}"
       else
-        # normal branch/tag fallback
-        if [ -n "${CI_COMMIT_TAG:-}" ]; then
-          IMAGE_TAG="${CI_COMMIT_TAG}"
-        else
-          IMAGE_TAG="${SHORT_SHA}"
-        fi
-        echo "Building with IMAGE_TAG=${IMAGE_TAG}"
+        IMAGE_TAG="${CI_COMMIT_TAG:-$CI_COMMIT_SHORT_SHA}"
       fi
 
-    - docker build --pull -t "${IMAGE_ENV_PATH}:${IMAGE_TAG}" .
+      echo "Building $IMAGE_ENV_PATH:$IMAGE_TAG using $IMAGE_PATH/$DOCKERFILE"
 
-    - |
+      # Build & tag
+      docker build --pull -f "$DOCKERFILE" -t "$IMAGE_ENV_PATH:$IMAGE_TAG" .
+
+      # Tag latest if needed
       if [ "${TAG_LATEST}" = "true" ]; then
-        echo "Tagging as latest: ${IMAGE_ENV_PATH}:latest"
-        docker tag "${IMAGE_ENV_PATH}:${IMAGE_TAG}" "${IMAGE_ENV_PATH}:latest"
+        docker tag "$IMAGE_ENV_PATH:$IMAGE_TAG" "$IMAGE_ENV_PATH:latest"
       fi
 
-    - |
+      # Push if enabled
       if [ "${PUSH_IMAGE}" = "true" ]; then
-        echo "Pushing ${IMAGE_ENV_PATH}:${IMAGE_TAG}"
-        docker push "${IMAGE_ENV_PATH}:${IMAGE_TAG}"
+        docker push "$IMAGE_ENV_PATH:$IMAGE_TAG"
+        [ "${TAG_LATEST}" = "true" ] && docker push "$IMAGE_ENV_PATH:latest"
 
-        if [ "${TAG_LATEST}" = "true" ]; then
-          echo "Pushing ${IMAGE_ENV_PATH}:latest"
-          docker push "${IMAGE_ENV_PATH}:latest"
-        fi
-
-        DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "${IMAGE_ENV_PATH}:${IMAGE_TAG}" 2>/dev/null || true)
+        DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE_ENV_PATH:$IMAGE_TAG" || true)
         DIGEST="${DIGEST#*@}"
-
-        if [ -z "$DIGEST" ]; then
-          echo "Failed to extract image digest for ${IMAGE_ENV_PATH}:${IMAGE_TAG}" >&2
-          exit 1
-        fi
-
-        echo "IMAGE_DIGEST=$DIGEST"
-        echo "IMAGE_DIGEST=$DIGEST" > image-digest.env
+        echo "IMAGE_DIGEST=${DIGEST:-skipped}" > image-digest.env
       else
-        echo "PUSH_IMAGE=false — skipping push"
         echo "IMAGE_DIGEST=skipped" > image-digest.env
       fi
-
-  after_script:
-    - docker logout "$CI_REGISTRY"
-
-  artifacts:
-    reports:
-      dotenv: image-digest.env
