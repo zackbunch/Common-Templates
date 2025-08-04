@@ -1,3 +1,26 @@
+# -------------------------------------------------------------------
+# Docker Build Template for GitLab CI
+#
+# This template provides:
+#   - Docker-in-Docker build environment
+#   - Automatic tagging logic for static or commit-based tags
+#   - Optional :latest tagging for release builds
+#   - Optional image push to GitLab container registry
+#   - Image digest capture to image-digest.env for downstream jobs
+#
+# Usage:
+#   - Extend .build-common in your jobs
+#   - Override variables as needed:
+#       IMAGE_PATH, IMAGE_ENV_PATH, DOCKERFILE
+#       TAG_MODE (versioned|static), TAG_SUFFIX
+#       PUSH_IMAGE, TAG_LATEST, RELEASE_IMAGE
+#
+# Behavior:
+#   - Feature branches can build without pushing
+#   - Dev or release jobs can push and tag latest
+#   - Digest artifact allows deterministic deploys using $IMAGE_DIGEST
+# -------------------------------------------------------------------
+
 .build-dind:
   image: docker:24.0.5
   services:
