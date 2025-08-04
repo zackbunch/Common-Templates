@@ -24,7 +24,6 @@
 
   script:
     - |
-      cd "$IMAGE_PATH"
       DOCKERFILE="${DOCKERFILE:-Dockerfile}"
 
       # Determine image tag based on TAG_MODE
@@ -54,8 +53,11 @@
 
       echo "Building $IMAGE_ENV_PATH:$IMAGE_TAG using $IMAGE_PATH/$DOCKERFILE"
 
-      # Build the image
-      docker build --pull -f "$DOCKERFILE" -t "$IMAGE_ENV_PATH:$IMAGE_TAG" .
+      # Build using explicit context instead of cd
+      docker build --pull \
+        -f "$IMAGE_PATH/$DOCKERFILE" \
+        -t "$IMAGE_ENV_PATH:$IMAGE_TAG" \
+        "$IMAGE_PATH"
 
       # Optionally tag latest
       if [ "${TAG_LATEST}" = "true" ]; then
