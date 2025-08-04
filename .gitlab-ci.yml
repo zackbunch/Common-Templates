@@ -14,10 +14,10 @@ build_feature:
   extends: [".build-common"]
   variables:
     IMAGE_PATH: "."                           # Dockerfile at root
-    IMAGE_ENV_PATH: $CI_REGISTRY_IMAGE/templates
+    IMAGE_ENV_PATH: $CI_REGISTRY_IMAGE/python
     DOCKERFILE: Dockerfile
-    TAG_MODE: versioned                       # Use commit SHA or tag
-    TAG_SUFFIX: latest
+    TAG_MODE: static                       # Use commit SHA or tag
+    TAG_SUFFIX: "3.12"
     PUSH_IMAGE: "false"                       # Feature branch = build only
     TAG_LATEST: "false"
   rules:
