@@ -19,6 +19,6 @@ build_feature:
     TAG_MODE: static                       # Use commit SHA or tag
     TAG_SUFFIX: "3.12"
     PUSH_IMAGE: "false"                       # Feature branch = build only
-    TAG_LATEST: "false"
+    TAG_LATEST: "true"
   rules:
     - if: '$CI_COMMIT_BRANCH && $CI_COMMIT_BRANCH != "dev"'
