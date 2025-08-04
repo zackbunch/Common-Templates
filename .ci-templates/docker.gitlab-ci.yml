@@ -69,11 +69,14 @@
 
         DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE_ENV_PATH:$IMAGE_TAG" || true)
         DIGEST="${DIGEST#*@}"
-        echo "IMAGE_DIGEST=${DIGEST:-skipped}" > image-digest.env
+        # Always write the digest to the project root for GitLab artifacts
+        echo "IMAGE_DIGEST=${DIGEST:-skipped}" > "$CI_PROJECT_DIR/image-digest.env"
       else
-        echo "IMAGE_DIGEST=skipped" > image-digest.env
+        echo "IMAGE_DIGEST=skipped" > "$CI_PROJECT_DIR/image-digest.env"
       fi
 
   artifacts:
     reports:
       dotenv: image-digest.env
+    paths:
+      - image-digest.env
