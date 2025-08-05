@@ -33,35 +33,24 @@
 .build-common:
   extends: .build-dind
   variables:
-    TAG_LATEST: "false"        # Whether to also tag :latest
-    PUSH_IMAGE: "false"        # Whether to push the built image
-    RELEASE_IMAGE: "false"     # Forces push + latest, requires a Git tag
-    TAG_MODE: "versioned"      # "versioned" default or "static"
-    TAG_SUFFIX: ""             # Optional suffix like "3.12" for static or multi-version builds
-    DOCKER_CONTEXT: "."        # Default build context for single-image builds
-    DOCKERFILE: Dockerfile     # Default Dockerfile
+    TAG_LATEST: "false"
+    PUSH_IMAGE: "false"
+    RELEASE_IMAGE: "false"
+    TAG_MODE: "versioned"
+    TAG_SUFFIX: ""
+    DOCKER_CONTEXT: "."
+    DOCKERFILE: Dockerfile
 
   before_script:
     - set -eu
-    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+    # Authenticate to registry with CI job token
+    - echo "$CI_JOB_TOKEN" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
 
   script:
     - |
-      # Debug info
-      echo "PWD: $(pwd)"
-      echo "DOCKER_CONTEXT='$DOCKER_CONTEXT'"
-      echo "IMAGE_ENV_PATH='$IMAGE_ENV_PATH'"
-      echo "DOCKERFILE='$DOCKERFILE'"
+      echo "Building $IMAGE_ENV_PATH:$TAG_SUFFIX"
 
-      # Fail fast if DOCKER_CONTEXT is empty
-      if [ -z "$DOCKER_CONTEXT" ]; then
-        echo "ERROR: DOCKER_CONTEXT is empty"
-        exit 1
-      fi
-
-      DOCKERFILE="${DOCKERFILE:-Dockerfile}"
-
-      # Determine image tag based on TAG_MODE
+      # Determine final tag
       if [ "${TAG_MODE}" = "static" ]; then
         IMAGE_TAG="${TAG_SUFFIX:-latest}"
       else
@@ -86,19 +75,21 @@
 
       echo "Building $IMAGE_ENV_PATH:$IMAGE_TAG using $DOCKER_CONTEXT/$DOCKERFILE"
 
-      # Use cd + docker build . for maximum portability with DinD
       cd "$DOCKER_CONTEXT"
+
+      # 🔹 Pass CI_REGISTRY and CI_JOB_TOKEN to the Dockerfile
       docker build --pull \
+        --build-arg CI_REGISTRY="$CI_REGISTRY" \
+        --build-arg GITLAB_TOKEN="$CI_JOB_TOKEN" \
+        --build-arg TOKEN_TYPE="JOB" \
         -f "$DOCKERFILE" \
         -t "$IMAGE_ENV_PATH:$IMAGE_TAG" \
         .
 
-      # Optionally tag latest
       if [ "${TAG_LATEST}" = "true" ]; then
         docker tag "$IMAGE_ENV_PATH:$IMAGE_TAG" "$IMAGE_ENV_PATH:latest"
       fi
 
-      # Push if enabled
       if [ "${PUSH_IMAGE}" = "true" ]; then
         docker push "$IMAGE_ENV_PATH:$IMAGE_TAG"
         [ "${TAG_LATEST}" = "true" ] && docker push "$IMAGE_ENV_PATH:latest"
