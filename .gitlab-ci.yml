@@ -1,7 +1,7 @@
 include:
   # Reference your local build-common template
-  local: '.ci-templates/docker.gitlab-ci.yml'
-  local: '.ci-templates/secrets-analyzer.gitlab-ci.yml'
+  - local: '.ci-templates/docker.gitlab-ci.yml'
+  - local: '.ci-templates/secrets-analyzer.gitlab-ci.yml'
 
 stages:
   - scan
