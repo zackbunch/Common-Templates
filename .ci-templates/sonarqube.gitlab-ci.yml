@@ -1,0 +1,77 @@
+# -------------------------------------------------------------------
+# SonarQube Scan Template for GitLab CI
+#
+# This template:
+#   - Runs SonarQube analysis using the specified scanner image
+#   - Validates required variables before running
+#   - Falls back to CI-based config if sonar-project.properties is missing
+#   - Supports:
+#       - Auto-scanning during Merge Request pipelines
+#       - Optional manual scan from main branch
+#
+# Required variables (set at group/project level):
+#   - SONAR_HOST_URL
+#   - SONAR_SCANNER_IMAGE (e.g. sonarsource/sonar-scanner-cli:latest)
+#   - ARM_SONAR_TOKEN (SonarQube auth token)
+# -------------------------------------------------------------------
+
+.sonarqube_template:
+  stage: sast
+  image: "$SONAR_SCANNER_IMAGE"
+  interruptible: true
+
+  variables:
+    SONAR_SCANNER_OPTS: "-Djavax.net.ssl.trustStore=/certs/java/cacerts"
+    SONAR_TOKEN: "$ARM_SONAR_TOKEN"
+
+  before_script:
+    - |
+      echo "==============================="
+      echo "🔍  SonarQube Scan: Starting"
+      echo "==============================="
+
+      REQUIRED_VARS=(SONAR_HOST_URL SONAR_SCANNER_IMAGE ARM_SONAR_TOKEN)
+      MISSING_VARS=0
+
+      for VAR in "${REQUIRED_VARS[@]}"; do
+        if [[ -z "${!VAR}" ]]; then
+          echo "❌ ERROR: $VAR is not set. Configure it at group or project level."
+          MISSING_VARS=1
+        else
+          echo "✅ $VAR is set"
+        fi
+      done
+
+      if [[ "$MISSING_VARS" -eq 1 ]]; then
+        echo "🚫 Aborting SonarQube scan due to missing configuration"
+        exit 1
+      fi
+
+      if [[ -f "sonar-project.properties" ]]; then
+        echo "✅ Found sonar-project.properties"
+      else
+        echo "⚠️  WARNING: sonar-project.properties not found!"
+        echo "   The scanner will rely on CI-provided properties."
+      fi
+
+      echo "🔍 SonarQube Version: $(curl -s "$SONAR_HOST_URL/api/server/version" || echo "unknown")"
+
+  script:
+    - |
+      echo "🚀 Starting SonarQube scan on $SONAR_HOST_URL"
+      sonar-scanner \
+        -Dsonar.host.url="$SONAR_HOST_URL" \
+        -Dsonar.scanner.skip=false
+
+  rules:
+    # ✅ Run automatically for Merge Request pipelines
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: always
+
+    # 🧪 Optional: manual scan for main branch
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: manual
+      allow_failure: true
+
+    # ❌ Otherwise, don't run
+    - when: never
