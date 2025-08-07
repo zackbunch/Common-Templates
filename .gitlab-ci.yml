@@ -29,6 +29,7 @@ build_feature:
 # -----------------------------------------------------------
 grype_scan:
   stage: scan
+  image: anchore/grype
   script:
     - |
       grype nginx
