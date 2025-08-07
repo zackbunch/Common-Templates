@@ -29,7 +29,7 @@ build_feature:
 # Grype scan after image build
 # -----------------------------------------------------------
 grype_scan:
-  stage: scan
+  stage: build
   extends: .grype_template
   needs: ["build_feature"]
   variables:
