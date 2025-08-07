@@ -28,8 +28,11 @@ build_feature:
 # Grype scan after image build
 # -----------------------------------------------------------
 grype_scan:
+  services:
+    - name: docker:24.0.5-dind
+      alias: docker
   stage: scan
   image: anchore/grype
   script:
     - |
-      grype nginx
+      grype nginx --only-fixed
