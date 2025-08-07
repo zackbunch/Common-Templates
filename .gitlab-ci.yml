@@ -1,7 +1,7 @@
 include:
-  # Reference your local build-common template
   - local: '.ci-templates/docker.gitlab-ci.yml'
   - local: '.ci-templates/secrets-analyzer.gitlab-ci.yml'
+  - local: '.ci-templates/grype.gitlab-ci.yml'
 
 stages:
   - scan
@@ -9,18 +9,30 @@ stages:
   - release
 
 # -----------------------------------------------------------
-# Feature branch build (build only, no push)
+# Feature branch build
 # -----------------------------------------------------------
 build_feature:
   stage: build
   extends: [".build-common"]
   variables:
-    DOCKER_CONTEXT: "."                           # Dockerfile at root
+    DOCKER_CONTEXT: "."
     IMAGE_ENV_PATH: $CI_REGISTRY_IMAGE/python
     DOCKERFILE: Dockerfile
-    TAG_MODE: static                       # Use commit SHA or tag
+    TAG_MODE: static
     TAG_SUFFIX: "3.12"
-    PUSH_IMAGE: "true"                       # Feature branch = build only
+    PUSH_IMAGE: "true"
     TAG_LATEST: "true"
+  rules:
+    - if: '$CI_COMMIT_BRANCH && $CI_COMMIT_BRANCH != "dev"'
+
+# -----------------------------------------------------------
+# Grype scan after image build
+# -----------------------------------------------------------
+grype_scan:
+  stage: scan
+  extends: .grype_template
+  needs: ["build_feature"]
+  variables:
+    GRYPE_IMAGE: "$CI_REGISTRY_IMAGE/python:3.12"
   rules:
     - if: '$CI_COMMIT_BRANCH && $CI_COMMIT_BRANCH != "dev"'

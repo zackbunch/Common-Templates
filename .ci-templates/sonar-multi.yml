@@ -1,0 +1,111 @@
+# sonar.yml
+
+# -------------------------------------------------------------------
+# Shared before_script anchor for SonarQube scanning
+# -------------------------------------------------------------------
+.default_sonar_before_script: &default_sonar_before_script
+  - |
+    echo "==============================="
+    echo "🔍  SonarQube Scan: Starting"
+    echo "==============================="
+
+    REQUIRED_VARS=(SONAR_HOST_URL SONAR_SCANNER_IMAGE ARM_SONAR_TOKEN)
+    MISSING_VARS=0
+
+    for VAR in "${REQUIRED_VARS[@]}"; do
+      if [[ -z "${!VAR}" ]]; then
+        echo "❌ ERROR: $VAR is not set. Configure it at group or project level."
+        MISSING_VARS=1
+      else
+        echo "✅ $VAR is set"
+      fi
+    done
+
+    if [[ "$MISSING_VARS" -eq 1 ]]; then
+      echo "🚫 Aborting SonarQube scan due to missing configuration"
+      exit 1
+    fi
+
+    if [[ -f "sonar-project.properties" ]]; then
+      echo "✅ Found sonar-project.properties"
+    else
+      echo "⚠️  WARNING: sonar-project.properties not found!"
+      echo "   The scanner will rely on CI-provided properties."
+    fi
+
+    echo "🔍 SonarQube Version: $(curl -s "$SONAR_HOST_URL/api/server/version" || echo "unknown")"
+
+# -------------------------------------------------------------------
+# Shared template job
+# -------------------------------------------------------------------
+.sonarqube_template:
+  stage: sast
+  image: "$SONAR_SCANNER_IMAGE"
+  interruptible: true
+  variables:
+    SONAR_TOKEN: "$ARM_SONAR_TOKEN"
+  script:
+    - |
+      echo "🚀 Starting SonarQube scan on $SONAR_HOST_URL"
+      sonar-scanner \
+        -Dsonar.host.url="$SONAR_HOST_URL" \
+        -Dsonar.scanner.skip=false
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: always
+    - when: manual
+      allow_failure: true
+    - when: never
+
+# -------------------------------------------------------------------
+# Python Scanner
+# -------------------------------------------------------------------
+sonar-python:
+  extends: .sonarqube_template
+  variables:
+    SONAR_SCANNER_OPTS: >
+      -Dsonar.python.version=3.11
+      -Dsonar.projectKey=$CI_PROJECT_PATH_SLUG
+  before_script:
+    - echo "🐍 Running Python SonarQube Template"
+    - *default_sonar_before_script
+  rules:
+    - exists:
+        - "**/*.py"
+    - when: never
+
+# -------------------------------------------------------------------
+# Java Scanner
+# -------------------------------------------------------------------
+sonar-java:
+  extends: .sonarqube_template
+  variables:
+    SONAR_SCANNER_OPTS: >
+      -Dsonar.java.binaries=build
+      -Dsonar.projectKey=$CI_PROJECT_PATH_SLUG
+  before_script:
+    - echo "☕ Running Java SonarQube Template"
+    - *default_sonar_before_script
+  rules:
+    - exists:
+        - "**/*.java"
+        - "pom.xml"
+    - when: never
+
+# -------------------------------------------------------------------
+# Node Scanner
+# -------------------------------------------------------------------
+sonar-node:
+  extends: .sonarqube_template
+  variables:
+    SONAR_SCANNER_OPTS: >
+      -Dsonar.sources=src
+      -Dsonar.projectKey=$CI_PROJECT_PATH_SLUG
+  before_script:
+    - echo "📦 Running Node SonarQube Template"
+    - *default_sonar_before_script
+  rules:
+    - exists:
+        - "package.json"
+        - "**/*.js"
+    - when: never

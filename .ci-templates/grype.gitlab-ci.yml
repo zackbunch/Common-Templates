@@ -1,0 +1,14 @@
+# security/grype.yml
+.grype_template:
+  stage: scan
+  image: anchore/grype:latest
+  variables:
+    GRYPE_DB_AUTO_UPDATE: "true"
+    GRYPE_FAIL_ON_SEVERITY: "medium" # optional: fail the job on vulnerabilities ≥ this
+  script:
+    - |
+      echo "🔍 Scanning image: $GRYPE_IMAGE"
+      grype "$GRYPE_IMAGE" \
+        --add-cpes-if-none \
+        --fail-on "$GRYPE_FAIL_ON_SEVERITY" \
+        --output table
