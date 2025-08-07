@@ -1,7 +1,6 @@
 include:
   - local: '.ci-templates/docker.gitlab-ci.yml'
   - local: '.ci-templates/secrets-analyzer.gitlab-ci.yml'
-  - local: '.ci-templates/grype.gitlab-ci.yml'
 
 stages:
   - scan
@@ -29,10 +28,7 @@ build_feature:
 # Grype scan after image build
 # -----------------------------------------------------------
 grype_scan:
-  stage: build
-  extends: .grype_template
-  needs: ["build_feature"]
-  variables:
-    GRYPE_IMAGE: nginx
-  rules:
-    - if: '$CI_COMMIT_BRANCH && $CI_COMMIT_BRANCH != "dev"'
+  stage: scan
+  script:
+    - |
+      grype nginx
