@@ -33,19 +33,32 @@ build_feature:
 
 grype_echo_template:
   stage: scan
-  image: alpine:latest
+  image: alpine:3.20
+  needs:
+    - job: build_feature
+      artifacts: true
   dependencies: ["build_feature"]
+  variables:
+    GIT_STRATEGY: none
   script:
+    - set -euo pipefail
     - |
-      if [ ! -f image-digest.env ]; then
-        echo "❌ image-digest.env not found"
-        exit 1
+      # Prefer dotenv-injected env; if not present, source the file.
+      if [ -z "${IMAGE_REF:-}" ] && [ -z "${IMAGE_DIGEST:-}" ]; then
+        if [ ! -f image-digest.env ]; then
+          echo "❌ image-digest.env not found and no env vars present"
+          exit 1
+        fi
+        set -a; . image-digest.env; set +a
       fi
 
-      source image-digest.env
-
-      if [ "${IMAGE_DIGEST}" = "skipped" ]; then
-        echo "⚠️ No image digest (build did not push)"
-      else
-        echo "✅ Image digest found: $IMAGE_DIGEST"
+      # Handle no-push case
+      if { [ "${IMAGE_REF:-skipped}" = "skipped" ] && [ "${IMAGE_DIGEST:-skipped}" = "skipped" ]; }; then
+        echo "⚠️ No pushed image (skipped)"; exit 0
       fi
+
+      # Echo everything useful
+      [ -n "${IMAGE_REF:-}" ]     && [ "${IMAGE_REF}"     != "skipped" ] && echo "✅ IMAGE_REF: ${IMAGE_REF}"
+      [ -n "${IMAGE_ENV_PATH:-}" ]                                    && echo "  IMAGE_ENV_PATH: ${IMAGE_ENV_PATH}"
+      [ -n "${IMAGE_TAG:-}" ]                                         && echo "  IMAGE_TAG: ${IMAGE_TAG}"
+      [ -n "${IMAGE_DIGEST:-}" ] && [ "${IMAGE_DIGEST}" != "skipped" ] && echo "✅ IMAGE_DIGEST: ${IMAGE_DIGEST}"
