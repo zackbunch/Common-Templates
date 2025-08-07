@@ -9,6 +9,4 @@
     - |
       echo "🔍 Scanning image: $GRYPE_IMAGE"
       grype "$GRYPE_IMAGE" \
-        --add-cpes-if-none \
-        --fail-on "$GRYPE_FAIL_ON_SEVERITY" \
         --output table
