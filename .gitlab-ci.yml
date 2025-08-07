@@ -19,8 +19,8 @@ build_feature:
     DOCKERFILE: Dockerfile
     TAG_MODE: static
     TAG_SUFFIX: "3.12"
-    PUSH_IMAGE: "true"
-    TAG_LATEST: "true"
+    PUSH_IMAGE: "false"
+    TAG_LATEST: "false"
   rules:
     - if: '$CI_COMMIT_BRANCH && $CI_COMMIT_BRANCH != "dev"'
 
