@@ -33,6 +33,6 @@ grype_scan:
   extends: .grype_template
   needs: ["build_feature"]
   variables:
-    GRYPE_IMAGE: "$CI_REGISTRY_IMAGE/python:3.12"
+    GRYPE_IMAGE: "$CI_REGISTRY_IMAGE/python/python:3.12"
   rules:
     - if: '$CI_COMMIT_BRANCH && $CI_COMMIT_BRANCH != "dev"'
