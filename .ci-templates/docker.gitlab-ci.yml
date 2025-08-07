@@ -1,24 +1,14 @@
 # -------------------------------------------------------------------
 # Docker Build Template for GitLab CI
 #
-# This template provides:
-#   - Docker-in-Docker build environment
-#   - Automatic tagging logic for static or commit-based tags
-#   - Optional :latest tagging for release builds
-#   - Optional image push to GitLab container registry
-#   - Image digest capture to image-digest.env for downstream jobs
-#
-# Usage:
-#   - Extend .build-common in your jobs
-#   - Override variables as needed:
-#       DOCKER_CONTEXT, IMAGE_ENV_PATH, DOCKERFILE
-#       TAG_MODE (versioned|static), TAG_SUFFIX
-#       PUSH_IMAGE, TAG_LATEST, RELEASE_IMAGE
-#
-# Behavior:
-#   - Feature branches can build without pushing
-#   - Dev or release jobs can push and tag latest
-#   - Digest artifact allows deterministic deploys using $IMAGE_DIGEST
+# - Builds with DinD
+# - Tag logic: static or versioned (optionally "release" tag flow)
+# - Optional :latest tagging
+# - Optional push
+# - Publishes image-digest.env with:
+#     IMAGE_REF     -> full immutable ref (repo@sha256:...)
+#     IMAGE_DIGEST  -> sha256:...
+#     IMAGE_ENV_PATH, IMAGE_TAG (compat)
 # -------------------------------------------------------------------
 
 .build-dind:
@@ -36,19 +26,18 @@
     TAG_LATEST: "false"
     PUSH_IMAGE: "false"
     RELEASE_IMAGE: "false"
-    TAG_MODE: "versioned"
+    TAG_MODE: "versioned"   # versioned|static
     TAG_SUFFIX: ""
     DOCKER_CONTEXT: "."
     DOCKERFILE: Dockerfile
 
   before_script:
-    - set -eu
-    # Authenticate to registry with CI job token
+    - set -euo pipefail
     - echo "$CI_JOB_TOKEN" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
 
   script:
     - |
-      echo "Building $IMAGE_ENV_PATH:$TAG_SUFFIX"
+      echo "==> Computing tag for ${IMAGE_ENV_PATH} (TAG_MODE=${TAG_MODE}, RELEASE_IMAGE=${RELEASE_IMAGE})"
 
       # Determine final tag
       if [ "${TAG_MODE}" = "static" ]; then
@@ -73,33 +62,53 @@
         fi
       fi
 
-      echo "Building $IMAGE_ENV_PATH:$IMAGE_TAG using $DOCKER_CONTEXT/$DOCKERFILE"
+      echo "==> Building ${IMAGE_ENV_PATH}:${IMAGE_TAG} using ${DOCKER_CONTEXT}/${DOCKERFILE}"
+      cd "${DOCKER_CONTEXT}"
 
-      cd "$DOCKER_CONTEXT"
-
-      # 🔹 Pass CI_REGISTRY and CI_JOB_TOKEN to the Dockerfile
       docker build --pull \
-        --build-arg CI_REGISTRY="$CI_REGISTRY" \
-        --build-arg GITLAB_TOKEN="$CI_JOB_TOKEN" \
+        --build-arg CI_REGISTRY="${CI_REGISTRY}" \
+        --build-arg GITLAB_TOKEN="${CI_JOB_TOKEN}" \
         --build-arg TOKEN_TYPE="JOB" \
-        -f "$DOCKERFILE" \
-        -t "$IMAGE_ENV_PATH:$IMAGE_TAG" \
+        -f "${DOCKERFILE}" \
+        -t "${IMAGE_ENV_PATH}:${IMAGE_TAG}" \
         .
 
       if [ "${TAG_LATEST}" = "true" ]; then
-        docker tag "$IMAGE_ENV_PATH:$IMAGE_TAG" "$IMAGE_ENV_PATH:latest"
+        docker tag "${IMAGE_ENV_PATH}:${IMAGE_TAG}" "${IMAGE_ENV_PATH}:latest"
       fi
+
+      # Prepare digest env file defaults
+      IMAGE_REF_VALUE="skipped"
+      IMAGE_DIGEST_VALUE="skipped"
 
       if [ "${PUSH_IMAGE}" = "true" ]; then
-        docker push "$IMAGE_ENV_PATH:$IMAGE_TAG"
-        [ "${TAG_LATEST}" = "true" ] && docker push "$IMAGE_ENV_PATH:latest"
+        echo "==> Pushing ${IMAGE_ENV_PATH}:${IMAGE_TAG}"
+        docker push "${IMAGE_ENV_PATH}:${IMAGE_TAG}"
+        if [ "${TAG_LATEST}" = "true" ]; then
+          docker push "${IMAGE_ENV_PATH}:latest"
+        fi
 
-        DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE_ENV_PATH:$IMAGE_TAG" || true)
-        DIGEST="${DIGEST#*@}"
-        echo "IMAGE_DIGEST=${DIGEST:-skipped}" > "$CI_PROJECT_DIR/image-digest.env"
+        # Resolve the digest for the pushed tag (select the repo@digest that matches IMAGE_ENV_PATH)
+        RAW_REPOS=$(docker inspect --format='{{range .RepoDigests}}{{println .}}{{end}}' "${IMAGE_ENV_PATH}:${IMAGE_TAG}" || true)
+        DIGEST_LINE=$(printf "%s" "${RAW_REPOS}" | grep -E "^${IMAGE_ENV_PATH}@sha256:" | head -n1 || true)
+
+        if [ -n "${DIGEST_LINE}" ]; then
+          IMAGE_REF_VALUE="${DIGEST_LINE}"
+          IMAGE_DIGEST_VALUE="${DIGEST_LINE#*@}"
+          echo "==> Resolved digest: ${IMAGE_DIGEST_VALUE}"
+        else
+          echo "WARN: Could not resolve digest from docker inspect; leaving IMAGE_REF=skipped" >&2
+        fi
       else
-        echo "IMAGE_DIGEST=skipped" > "$CI_PROJECT_DIR/image-digest.env"
+        echo "==> PUSH_IMAGE=false; skipping push and digest resolution"
       fi
+
+      {
+        echo "IMAGE_ENV_PATH=${IMAGE_ENV_PATH}"
+        echo "IMAGE_TAG=${IMAGE_TAG}"
+        echo "IMAGE_DIGEST=${IMAGE_DIGEST_VALUE}"
+        echo "IMAGE_REF=${IMAGE_REF_VALUE}"
+      } > "${CI_PROJECT_DIR}/image-digest.env"
 
   artifacts:
     reports:
