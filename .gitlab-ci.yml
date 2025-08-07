@@ -3,8 +3,8 @@ include:
   - local: '.ci-templates/secrets-analyzer.gitlab-ci.yml'
 
 stages:
-  - scan
   - build
+  - scan
   - release
 
 # -----------------------------------------------------------
@@ -24,13 +24,28 @@ build_feature:
   rules:
     - if: '$CI_COMMIT_BRANCH && $CI_COMMIT_BRANCH != "dev"'
 
-# -----------------------------------------------------------
-# Grype scan after image build
-# -----------------------------------------------------------
-grype_scan:
+# -------------------------------------------------------------------
+# Grype Echo Digest Template
+#
+# Just prints out the digest saved by `.build-common`.
+# Useful for debugging or dry-run scanning logic.
+# -------------------------------------------------------------------
+
+grype_echo_template:
   stage: scan
-  image:
-    name: anchore/grype:latest
-    entrypoint: [""]
+  image: alpine:latest
+  dependencies: ["build_feature"]
   script:
-    - grype nginx --only-fixed
+    - |
+      if [ ! -f image-digest.env ]; then
+        echo "❌ image-digest.env not found"
+        exit 1
+      fi
+
+      source image-digest.env
+
+      if [ "${IMAGE_DIGEST}" = "skipped" ]; then
+        echo "⚠️ No image digest (build did not push)"
+      else
+        echo "✅ Image digest found: $IMAGE_DIGEST"
+      fi
