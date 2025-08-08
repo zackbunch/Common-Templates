@@ -14,13 +14,12 @@ build_feature:
   stage: build
   extends: [".build-common"]
   variables:
-    DOCKER_CONTEXT: "."
-    IMAGE_ENV_PATH: $CI_REGISTRY_IMAGE/python
-    DOCKERFILE: Dockerfile
-    TAG_MODE: static
-    TAG_SUFFIX: "3.12"
-    PUSH_IMAGE: "false"
-    TAG_LATEST: "false"
+    IMAGE_ENV_PATH: "$CI_REGISTRY_IMAGE/app"  # e.g., registry.example.com/group/project/app
+    RELEASE_IMAGE: "false"   # CRITICAL: Never push feature builds
+    TAG_SUFFIX: ""           # No suffix for feature branches
   rules:
-    - if: '$CI_COMMIT_BRANCH && $CI_COMMIT_BRANCH != "dev"'
+    - if: $CI_COMMIT_BRANCH =~ /^gmarm-/
+  script:
+    - echo "Building feature branch $CI_COMMIT_BRANCH (no push)"
+    # The template handles everything else automatically
 
