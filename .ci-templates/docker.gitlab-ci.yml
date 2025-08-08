@@ -1,117 +1,91 @@
-# -------------------------------------------------------------------
-# Docker Build Template for GitLab CI
-#
-# - Builds with DinD
-# - Tag logic: static or versioned (optionally "release" tag flow)
-# - Optional :latest tagging
-# - Optional push
-# - Publishes image-digest.env with:
-#     IMAGE_REF     -> full immutable ref (repo@sha256:...)
-#     IMAGE_DIGEST  -> sha256:...
-#     IMAGE_ENV_PATH, IMAGE_TAG (compat)
-# -------------------------------------------------------------------
-
-.build-dind:
-  image: docker:24.0.5
-  services:
-    - name: docker:24.0.5-dind
-      alias: docker
-  variables:
-    DOCKER_DRIVER: overlay2
-    DOCKER_TLS_CERTDIR: ""
-
 .build-common:
   extends: .build-dind
   variables:
     TAG_LATEST: "false"
     PUSH_IMAGE: "false"
     RELEASE_IMAGE: "false"
-    TAG_MODE: "versioned"   # versioned|static
-    TAG_SUFFIX: ""
+    TAG_SUFFIX: ""        # Will be validated
     DOCKER_CONTEXT: "."
     DOCKERFILE: Dockerfile
 
   before_script:
-    - set -euo pipefail
-    - echo "$CI_JOB_TOKEN" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+    - docker login -u "$CI_REGISTRY_USER" -p "$CI_JOB_TOKEN" "$CI_REGISTRY"
 
-  script:
-    - |
-      echo "==> Computing tag for ${IMAGE_ENV_PATH} (TAG_MODE=${TAG_MODE}, RELEASE_IMAGE=${RELEASE_IMAGE})"
+  script: |
+    set -euo pipefail
 
-      # Determine final tag
-      if [ "${TAG_MODE}" = "static" ]; then
-        IMAGE_TAG="${TAG_SUFFIX:-latest}"
-      else
-        if [ "${RELEASE_IMAGE}" = "true" ]; then
-          if [ -z "${CI_COMMIT_TAG:-}" ]; then
-            echo "RELEASE_IMAGE=true requires a CI_COMMIT_TAG" >&2
-            exit 1
-          fi
-          BASE_TAG="${CI_COMMIT_TAG}"
-          PUSH_IMAGE="true"
-          TAG_LATEST="true"
-        else
-          BASE_TAG="${CI_COMMIT_TAG:-$CI_COMMIT_SHORT_SHA}"
-        fi
+    # Verify required variables
+    if [ -z "${IMAGE_ENV_PATH:-}" ]; then
+      echo "ERROR: IMAGE_ENV_PATH must be defined!" >&2
+      exit 1
+    fi
 
-        if [ -n "${TAG_SUFFIX:-}" ] && [ "${TAG_SUFFIX}" != "latest" ]; then
-          IMAGE_TAG="${TAG_SUFFIX}-${BASE_TAG}"
-        else
-          IMAGE_TAG="${BASE_TAG}"
-        fi
+    # Validate TAG_SUFFIX (prevents confusion)
+    if [ "${TAG_SUFFIX}" = "latest" ]; then
+      echo "ERROR: TAG_SUFFIX cannot be 'latest' (use RELEASE_IMAGE=true for :latest tag)" >&2
+      exit 1
+    fi
+
+    # Compute base tag
+    if [ "${RELEASE_IMAGE}" = "true" ]; then
+      if [ -z "${CI_COMMIT_TAG:-}" ]; then
+        echo "ERROR: RELEASE_IMAGE=true requires CI_COMMIT_TAG" >&2
+        exit 1
       fi
+      BASE_TAG="${CI_COMMIT_TAG}"
+      PUSH_IMAGE="true"
+      TAG_LATEST="true"
+    else
+      BASE_TAG="${CI_COMMIT_TAG:-${CI_COMMIT_SHORT_SHA}}"
+    fi
 
-      echo "==> Building ${IMAGE_ENV_PATH}:${IMAGE_TAG} using ${DOCKER_CONTEXT}/${DOCKERFILE}"
-      cd "${DOCKER_CONTEXT}"
+    # Final image tag (handles suffix safely)
+    IMAGE_TAG="${TAG_SUFFIX:+${TAG_SUFFIX}-}${BASE_TAG}"
 
-      docker build --pull \
-        --build-arg CI_REGISTRY="${CI_REGISTRY}" \
-        --build-arg GITLAB_TOKEN="${CI_JOB_TOKEN}" \
-        --build-arg TOKEN_TYPE="JOB" \
-        -f "${DOCKERFILE}" \
-        -t "${IMAGE_ENV_PATH}:${IMAGE_TAG}" \
-        .
+    # Build (NO BUILD ARGUMENTS FOR SECRETS!)
+    docker build --pull \
+      -f "${DOCKERFILE}" \
+      -t "${IMAGE_ENV_PATH}:${IMAGE_TAG}" \
+      "${DOCKER_CONTEXT}"
 
+    # Tag :latest if requested
+    if [ "${TAG_LATEST}" = "true" ]; then
+      docker tag "${IMAGE_ENV_PATH}:${IMAGE_TAG}" "${IMAGE_ENV_PATH}:latest"
+    fi
+
+    # Push if requested
+    if [ "${PUSH_IMAGE}" = "true" ]; then
+      docker push "${IMAGE_ENV_PATH}:${IMAGE_TAG}"
       if [ "${TAG_LATEST}" = "true" ]; then
-        docker tag "${IMAGE_ENV_PATH}:${IMAGE_TAG}" "${IMAGE_ENV_PATH}:latest"
+        docker push "${IMAGE_ENV_PATH}:latest"
       fi
 
-      # Prepare digest env file defaults
+      # Correctly resolve digest
+      DIGEST_LINE=$(docker inspect --format='{{index .RepoDigests 0}}' "${IMAGE_ENV_PATH}:${IMAGE_TAG}" 2>/dev/null || true)
+      if [ -n "${DIGEST_LINE}" ]; then
+        IMAGE_REF_VALUE="${DIGEST_LINE}"
+        IMAGE_DIGEST_VALUE="${DIGEST_LINE#*@sha256:}"
+      else
+        IMAGE_REF_VALUE="skipped"
+        IMAGE_DIGEST_VALUE="skipped"
+      fi
+    else
       IMAGE_REF_VALUE="skipped"
       IMAGE_DIGEST_VALUE="skipped"
+    fi
 
-      if [ "${PUSH_IMAGE}" = "true" ]; then
-        echo "==> Pushing ${IMAGE_ENV_PATH}:${IMAGE_TAG}"
-        docker push "${IMAGE_ENV_PATH}:${IMAGE_TAG}"
-        if [ "${TAG_LATEST}" = "true" ]; then
-          docker push "${IMAGE_ENV_PATH}:latest"
-        fi
-
-        # Resolve the digest for the pushed tag (select the repo@digest that matches IMAGE_ENV_PATH)
-        RAW_REPOS=$(docker inspect --format='{{range .RepoDigests}}{{println .}}{{end}}' "${IMAGE_ENV_PATH}:${IMAGE_TAG}" || true)
-        DIGEST_LINE=$(printf "%s" "${RAW_REPOS}" | grep -E "^${IMAGE_ENV_PATH}@sha256:" | head -n1 || true)
-
-        if [ -n "${DIGEST_LINE}" ]; then
-          IMAGE_REF_VALUE="${DIGEST_LINE}"
-          IMAGE_DIGEST_VALUE="${DIGEST_LINE#*@}"
-          echo "==> Resolved digest: ${IMAGE_DIGEST_VALUE}"
-        else
-          echo "WARN: Could not resolve digest from docker inspect; leaving IMAGE_REF=skipped" >&2
-        fi
-      else
-        echo "==> PUSH_IMAGE=false; skipping push and digest resolution"
-      fi
-
-      {
-        echo "IMAGE_ENV_PATH=${IMAGE_ENV_PATH}"
-        echo "IMAGE_TAG=${IMAGE_TAG}"
-        echo "IMAGE_DIGEST=${IMAGE_DIGEST_VALUE}"
-        echo "IMAGE_REF=${IMAGE_REF_VALUE}"
-      } > "${CI_PROJECT_DIR}/image-digest.env"
+    # Output env file
+    {
+      echo "IMAGE_ENV_PATH=${IMAGE_ENV_PATH}"
+      echo "IMAGE_TAG=${IMAGE_TAG}"
+      echo "IMAGE_DIGEST=${IMAGE_DIGEST_VALUE}"
+      echo "IMAGE_REF=${IMAGE_REF_VALUE}"
+    } > "${CI_PROJECT_DIR}/image-digest.env"
 
   artifacts:
     reports:
       dotenv: image-digest.env
     paths:
       - image-digest.env
+    when: always
+    expire_in: 1 week
