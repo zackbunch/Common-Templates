@@ -69,6 +69,8 @@ grype_scan_dev:
   needs:
     - job: build_dev
       artifacts: true
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "dev"'
   variables:
     GIT_STRATEGY: none
   before_script:
