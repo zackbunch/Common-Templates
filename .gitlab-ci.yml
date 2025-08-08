@@ -36,3 +36,26 @@ build_dev:
   rules:
     - if: '$CI_COMMIT_BRANCH == "dev"'
   # image-digest.env is already exported by .build-common as dotenv + artifact
+
+
+container_scan_dev:
+  stage: scan
+  image: alpine:3.20
+  needs:
+    - job: build_dev
+      artifacts: true
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "dev"'
+  script: |
+    set -euo pipefail
+    echo "=== Container scan (dev) ==="
+
+    # Show tag form
+    echo "Tag ref:     ${IMAGE_ENV_PATH}:${IMAGE_TAG}"
+
+    # Show digest form (immutable) if available
+    if [ -n "${IMAGE_DIGEST:-}" ] && [ "${IMAGE_DIGEST}" != "skipped" ]; then
+      echo "Digest ref:  ${IMAGE_ENV_PATH}@sha256:${IMAGE_DIGEST}"
+    else
+      echo "Digest ref:  unavailable (no push or digest not resolved)"
+    fi
