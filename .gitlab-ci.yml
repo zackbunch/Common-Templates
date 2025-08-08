@@ -20,3 +20,19 @@ build_feature:
   rules:
     - if: $CI_COMMIT_BRANCH =~ /^gmarm-/
 
+# ---------------------------
+# Build & push for dev branch
+# ---------------------------
+build_dev:
+  stage: build
+  extends: .build-common
+  variables:
+    # override per-service as needed
+    IMAGE_ENV_PATH: "$CI_REGISTRY_IMAGE/python"
+    TAG_SUFFIX: "dev"        # dev-a1b2c3d
+    PUSH_IMAGE: "true"       # push so dev cluster can pull it
+    TAG_LATEST: "false"      # don't pollute :latest
+    RELEASE_IMAGE: "false"
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "dev"'
+  # image-digest.env is already exported by .build-common as dotenv + artifact
