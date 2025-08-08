@@ -61,17 +61,23 @@ container_scan_dev:
     fi
 
 
-
-grype_scan:
+grype_scan_dev:
   stage: scan
-  image: anchore/grype:latest  # Or a specific version
+  image:
+    name: anchore/grype:latest
+    entrypoint: [""]   # clears the image’s ENTRYPOINT
   needs:
     - job: build_dev
       artifacts: true
   rules:
     - if: '$CI_COMMIT_BRANCH == "dev"'
+  variables:
+    GIT_STRATEGY: none
+  before_script:
+    - docker login -u "$CI_REGISTRY_USER" -p "$CI_JOB_TOKEN" "$CI_REGISTRY"
+    - source image-digest.env
   script:
-    - echo ${IMAGE_ENV_PATH}:${IMAGE_TAG} > gl-container-scanning-report.json
+    - grype "$IMAGE_REF" -o json > gl-container-scanning-report.json
   artifacts:
     reports:
       container_scanning: gl-container-scanning-report.json
