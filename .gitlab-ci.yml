@@ -1,11 +1,10 @@
 include:
   - local: '.ci-templates/docker.gitlab-ci.yml'
   - local: '.ci-templates/secrets-analyzer.gitlab-ci.yml'
-  - local: '.ci-templates/grype.gitlab-ci.yml'
 
 stages:
-  - scan
   - build
+  - scan
   - release
 
 # -----------------------------------------------------------
@@ -15,24 +14,25 @@ build_feature:
   stage: build
   extends: [".build-common"]
   variables:
-    DOCKER_CONTEXT: "."
-    IMAGE_ENV_PATH: $CI_REGISTRY_IMAGE/python
-    DOCKERFILE: Dockerfile
-    TAG_MODE: static
-    TAG_SUFFIX: "3.12"
-    PUSH_IMAGE: "true"
-    TAG_LATEST: "true"
+    IMAGE_ENV_PATH: "$CI_REGISTRY_IMAGE/app"  # e.g., registry.example.com/group/project/app
+    RELEASE_IMAGE: "false"   # CRITICAL: Never push feature builds
+    TAG_SUFFIX: ""           # No suffix for feature branches
   rules:
-    - if: '$CI_COMMIT_BRANCH && $CI_COMMIT_BRANCH != "dev"'
+    - if: $CI_COMMIT_BRANCH =~ /^gmarm-/
 
-# -----------------------------------------------------------
-# Grype scan after image build
-# -----------------------------------------------------------
-grype_scan:
-  stage: scan
-  extends: .grype_template
-  needs: ["build_feature"]
+# ---------------------------
+# Build & push for dev branch
+# ---------------------------
+build_dev:
+  stage: build
+  extends: .build-common
   variables:
-    GRYPE_IMAGE: "$CI_REGISTRY_IMAGE/python:3.12"
+    # override per-service as needed
+    IMAGE_ENV_PATH: "$CI_REGISTRY_IMAGE/python"
+    TAG_SUFFIX: "dev"        # dev-a1b2c3d
+    PUSH_IMAGE: "true"       # push so dev cluster can pull it
+    TAG_LATEST: "false"      # don't pollute :latest
+    RELEASE_IMAGE: "false"
   rules:
-    - if: '$CI_COMMIT_BRANCH && $CI_COMMIT_BRANCH != "dev"'
+    - if: '$CI_COMMIT_BRANCH == "dev"'
+  # image-digest.env is already exported by .build-common as dotenv + artifact
