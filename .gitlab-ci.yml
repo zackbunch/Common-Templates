@@ -19,7 +19,4 @@ build_feature:
     TAG_SUFFIX: ""           # No suffix for feature branches
   rules:
     - if: $CI_COMMIT_BRANCH =~ /^gmarm-/
-  script:
-    - echo "Building feature branch $CI_COMMIT_BRANCH (no push)"
-    # The template handles everything else automatically
 
