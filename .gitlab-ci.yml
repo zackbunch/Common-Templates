@@ -51,7 +51,7 @@ container_scan_dev:
     echo "=== Container scan (dev) ==="
 
     # Show tag form
-    echo "Tag ref:     ${IMAGE_ENV_PATH}:${IMAGE_TAG}"
+    echo "Tag ref: ${IMAGE_ENV_PATH}:${IMAGE_TAG}"
 
     # Show digest form (immutable) if available
     if [ -n "${IMAGE_DIGEST:-}" ] && [ "${IMAGE_DIGEST}" != "skipped" ]; then
@@ -61,23 +61,3 @@ container_scan_dev:
     fi
 
 
-grype_scan_dev:
-  stage: scan
-  image:
-    name: anchore/grype:latest
-    entrypoint: [""]   # clears the image’s ENTRYPOINT
-  needs:
-    - job: build_dev
-      artifacts: true
-  rules:
-    - if: '$CI_COMMIT_BRANCH == "dev"'
-  variables:
-    GIT_STRATEGY: none
-  before_script:
-    - docker login -u "$CI_REGISTRY_USER" -p "$CI_JOB_TOKEN" "$CI_REGISTRY"
-    - source image-digest.env
-  script:
-    - grype "$IMAGE_REF" -o json > gl-container-scanning-report.json
-  artifacts:
-    reports:
-      container_scanning: gl-container-scanning-report.json
