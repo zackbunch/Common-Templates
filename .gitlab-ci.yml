@@ -59,3 +59,19 @@ container_scan_dev:
     else
       echo "Digest ref:  unavailable (no push or digest not resolved)"
     fi
+
+
+
+grype_scan:
+  stage: scan
+  image: anchore/grype:latest  # Or a specific version
+  needs:
+    - job: build_dev
+      artifacts: true
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "dev"'
+  script:
+    - grype ${IMAGE_ENV_PATH}:${IMAGE_TAG} -o json > gl-container-scanning-report.json
+  artifacts:
+    reports:
+      container_scanning: gl-container-scanning-report.json
