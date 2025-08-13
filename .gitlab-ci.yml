@@ -89,14 +89,10 @@ build:
     # Skip everything else
     - when: never
 
-# ---------------------------
-# Release
-# ---------------------------
 release:create:
   stage: release
   image: registry.gitlab.com/gitlab-org/release-cli:latest
-  rules:
-    - if: '$CI_COMMIT_TAG'
+  rules: !reference [.rule:tag-only, rules]   # ← only run for tag pipelines
   needs:
     - job: build
       artifacts: true
