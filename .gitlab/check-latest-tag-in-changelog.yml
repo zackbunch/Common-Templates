@@ -1,0 +1,63 @@
+# Add 'verify' (or 'test') to your stages:
+# stages: [scan, build, verify, deploy, release]
+
+check-latest-tag-in-changelog:
+  stage: verify
+  image: alpine:3.20
+  rules:
+    - if: '$CHANGELOG_CHECK_DISABLED'
+      when: never
+    - if: '$CI_COMMIT_TAG'           # only on tag pipelines
+  script:
+    - set -eu
+    # 1) Pick changelog file
+    - |
+      if   [ -f CHANGELOG.md ]; then CHANGELOG_FILE=CHANGELOG.md
+      elif [ -f CHANGELOG    ]; then CHANGELOG_FILE=CHANGELOG
+      else echo "No CHANGELOG.md or CHANGELOG found"; exit 1
+      fi
+      echo "Using $CHANGELOG_FILE"
+    # 2) Extract first real version heading (skip Unreleased)
+    - |
+      latest_changelog_version="$(
+        awk '
+          BEGIN{ IGNORECASE=1 }
+          # match headings like:
+          # ## [1.2.3] - 2025-08-13
+          # ## 1.2.3
+          # ## v1.2.3
+          # allow pre-release/build: -rc.1, +meta
+          /^##[[:space:]]*(\[[[:alnum:].+-]+]|[[:alnum:].+-]+)/ {
+            line=$0
+            # Skip Unreleased section
+            if (line ~ /##[[:space:]]*\[?unreleased\]?/) next
+            # strip leading "## " and brackets
+            gsub(/^##[[:space:]]*/,"",line)
+            gsub(/^\[/,"",line); gsub(/\].*$/,"",line)
+            # now line starts with version token; cut at first space
+            split(line, a, /[[:space:]]+/)
+            ver=a[1]
+            # strip leading "v" or "V"
+            sub(/^[vV]/,"",ver)
+            print ver
+            exit
+          }
+        ' "$CHANGELOG_FILE"
+      )"
+      if [ -z "${latest_changelog_version:-}" ]; then
+        echo "Could not find a version heading in $CHANGELOG_FILE"; exit 1
+      fi
+      echo "Latest in changelog: ${latest_changelog_version}"
+    # 3) Normalize tag (strip leading v)
+    - |
+      tag_no_v="${CI_COMMIT_TAG#v}"
+      echo "Current tag: ${CI_COMMIT_TAG} (normalized: ${tag_no_v})"
+    # 4) Compare
+    - |
+      if [ "$latest_changelog_version" = "$tag_no_v" ]; then
+        echo "OK: changelog latest matches tag ($tag_no_v)"
+      else
+        echo "FAIL: changelog latest ($latest_changelog_version) != tag ($tag_no_v)"
+        echo "Ensure CHANGELOG entry for ${tag_no_v} is first and properly headed (e.g., '## ${tag_no_v}' or '## [${tag_no_v}] - YYYY-MM-DD')."
+        exit 1
+      fi
