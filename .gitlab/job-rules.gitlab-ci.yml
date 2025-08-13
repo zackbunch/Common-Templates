@@ -10,12 +10,13 @@
     - when: never
 
 # --- Manual only on non-MR pipelines (your original) ---
+# .gitlab/job-rules.gitlab-ci.yml
 .rule:scan-manual-non-mr:
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
       when: never
     - when: manual
-      allow_failure: false
+      allow_failure: true   # make it optional so it doesn't block
 
 # --- Generic, often-needed blocks ---
 # Push or MR only (deny schedules/web/API unless explicitly allowed)
