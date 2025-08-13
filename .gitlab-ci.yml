@@ -116,7 +116,7 @@ release:publish:
       links:
         # Prefer immutable ref over fragile UI links requiring registry ID
         - name: "Container image (immutable)"
-          url: "oci://${IMAGE_REF:-$CI_REGISTRY_IMAGE/$APP_NAME:$CI_COMMIT_TAG}"
+          url: "https://${IMAGE_REF:-$CI_REGISTRY_IMAGE/$APP_NAME:$CI_COMMIT_TAG}"
         # Also attach pipeline artifacts bundle (if any)
         - name: "Build artifacts"
           url: "${CI_PROJECT_URL}/-/jobs/${CI_JOB_ID}/artifacts/download"
