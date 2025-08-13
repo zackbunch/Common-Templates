@@ -72,7 +72,7 @@ build:
 release:create:
   stage: release
   image: registry.gitlab.com/gitlab-org/release-cli:latest
-  rules: !reference [.rule:tag-only, rules]   # ← only run for tag pipelines
+  rules: !reference [.rule:tag-only, rules]
   needs:
     - job: build
       artifacts: true
