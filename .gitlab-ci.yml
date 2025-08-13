@@ -84,39 +84,30 @@ build:
     # Skip everything else
     - when: never
 
-# ---------------------------
-# Release
-# ---------------------------
-# Use native 'release:' keyword, not release-cli. Consume image-digest.env to
-# attach the immutable image ref as an asset link.
-release:publish:
+release:create:
   stage: release
+  image: registry.gitlab.com/gitlab-org/release-cli:latest
+  rules:
+    - if: '$CI_COMMIT_TAG'   # run only for tag pipelines
   needs:
     - job: build
       artifacts: true
-  image: registry.gitlab.com/gitlab-org/release-cli:latest  # or alpine:3.20
-  rules:
-    - if: '$CI_COMMIT_TAG'                 # run only for tag pipelines
-      when: on_success
-    - when: never
-
   before_script:
-    - if [ -f image-digest.env ]; then source image-digest.env; fi
-    # Expect IMAGE_REF like: registry/path/app@sha256:...
-    - echo "IMAGE_REF=${IMAGE_REF:-unset}"
-
+    - NOTES=RELEASE_NOTES.md
+    - IMAGE="(not available)"
+    - if [ -f image-digest.env ]; then . image-digest.env; IMAGE="${IMAGE_REF}"; fi
+    - |
+      {
+        echo "Release ${CI_COMMIT_TAG}"
+        echo
+        echo "Pipeline: ${CI_PIPELINE_URL}"
+        echo "Commit:   ${CI_PROJECT_URL}/-/commit/${CI_COMMIT_SHA}"
+        echo
+        echo "Image:"
+        echo "\`${IMAGE}\`"
+      } > "${NOTES}"
   script:
-    - echo "Publishing GitLab Release for $CI_COMMIT_TAG"
-
-  release:
-    tag_name: "$CI_COMMIT_TAG"
-    name: "Release $CI_COMMIT_TAG"
-    description: "Automated release from pipeline"
-    assets:
-      links:
-        # Prefer immutable ref over fragile UI links requiring registry ID
-        - name: "Container image (immutable)"
-          url: "https://${IMAGE_REF:-$CI_REGISTRY_IMAGE/$APP_NAME:$CI_COMMIT_TAG}"
-        # Also attach pipeline artifacts bundle (if any)
-        - name: "Build artifacts"
-          url: "${CI_PROJECT_URL}/-/jobs/${CI_JOB_ID}/artifacts/download"
+    - release-cli create
+        --name "Release ${CI_COMMIT_TAG}"
+        --tag-name "${CI_COMMIT_TAG}"
+        --description "$(cat ${NOTES})"
