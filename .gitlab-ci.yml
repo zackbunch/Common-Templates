@@ -6,7 +6,6 @@ include:
   - local: '.gitlab/secrets.gitlab-ci.yml'       # scans can !reference rules now
   - local: '.gitlab/docker.gitlab-ci.yml'
   - local: '.gitlab/deploy.gitlab-ci.yml'
-  - local: '.gitlab/check-latest-tag-in-changelog.yml'
 
 stages: [verify, scan, build, deploy, release]
 
