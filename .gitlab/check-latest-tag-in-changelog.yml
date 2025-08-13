@@ -4,10 +4,10 @@
 check-latest-tag-in-changelog:
   stage: verify
   image: alpine:3.20
-  # rules:
-  #   - if: '$CHANGELOG_CHECK_DISABLED'
-  #     when: never
-    # - if: '$CI_COMMIT_TAG'           # only on tag pipelines
+  rules:
+    - if: '$CHANGELOG_CHECK_DISABLED'
+      when: never
+    - if: '$CI_COMMIT_TAG'           # only on tag pipelines
   script:
     - set -eu
     # 1) Pick changelog file
