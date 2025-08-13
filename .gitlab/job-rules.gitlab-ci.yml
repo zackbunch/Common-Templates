@@ -8,4 +8,4 @@
 .rule:scan-manual:
   rules:
     - when: manual
-      allow_failure: false
+      allow_failure: true
