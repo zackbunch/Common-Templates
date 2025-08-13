@@ -1,64 +1,107 @@
+# -------------------------------------------------------------------
+# Example CI Pipeline
+# -------------------------------------------------------------------
+# Stages:
+#   1. Scan    - Runs secrets scan from .gitlab/secrets.gitlab-ci.yml
+#   2. Build   - Uses .build-common from .gitlab/docker.gitlab-ci.yml
+#   4. Deploy  - Uses jobs from .gitlab/deploy.gitlab-ci.yml
+#
+# Notes:
+#   - Secrets job is dev-only (rules inside secrets.gitlab-ci.yml)
+#   - Build pushes on env branches and tags; skips on others
+#   - Deploy jobs pick up build artifacts (image-digest.env) for exact image refs
+# -------------------------------------------------------------------
+
 include:
-  - local: '.ci-templates/docker.gitlab-ci.yml'
-  - local: '.ci-templates/secrets-analyzer.gitlab-ci.yml'
+  - local: '.gitlab/docker.gitlab-ci.yml'
+  - local: '.gitlab/deploy.gitlab-ci.yml'
+  - local: '.gitlab/secrets.gitlab-ci.yml'
 
 stages:
-  - build
   - scan
+  - build
+  - deploy
   - release
 
-# -----------------------------------------------------------
-# Feature branch build
-# -----------------------------------------------------------
-build_feature:
-  stage: build
-  extends: [".build-common"]
-  variables:
-    IMAGE_ENV_PATH: "$CI_REGISTRY_IMAGE/app"  # e.g., registry.example.com/group/project/app
-    RELEASE_IMAGE: "false"   # CRITICAL: Never push feature builds
-    TAG_SUFFIX: ""           # No suffix for feature branches
+# Default variables for this project
+variables:
+  APP_NAME: templates
+
+  # Tag suffixes (override at group/project level if needed)
+  DEV_TAG_SUFFIX: "dev"
+  TEST_TAG_SUFFIX: "test"
+  INT_TAG_SUFFIX: "int"
+  PROD_TAG_SUFFIX: "prod"
+  MR_TAG_SUFFIX: "mr"
+  FEATURE_TAG_SUFFIX: "feat"
+
+  # Feature branches only push if explicitly enabled
+  PUSH_ON_FEATURE: "false"
+
+# Only run pipelines on pushes or MRs
+workflow:
   rules:
-    - if: $CI_COMMIT_BRANCH =~ /^gmarm-/
+    - if: '$CI_PIPELINE_SOURCE == "push"'
+      when: always
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: always
+    - when: never
 
 # ---------------------------
-# Build & push for dev branch
+# Build job
 # ---------------------------
-build_dev:
+build:
   stage: build
   extends: .build-common
-  variables:
-    # override per-service as needed
-    IMAGE_ENV_PATH: "$CI_REGISTRY_IMAGE/python"
-    TAG_SUFFIX: "dev"        # dev-a1b2c3d
-    PUSH_IMAGE: "true"       # push so dev cluster can pull it
-    TAG_LATEST: "false"      # don't pollute :latest
-    RELEASE_IMAGE: "false"
+  # variables:
+  #   IMAGE_ENV_PATH: "$CI_REGISTRY_IMAGE/$APP_NAME"
+
   rules:
+    # Tag builds → release image
+    - if: '$CI_COMMIT_TAG'
+      variables:
+        RELEASE_IMAGE: "true"
+        PUSH_IMAGE: "true"
+        TAG_SUFFIX: ""
+        TAG_LATEST: "false"   # :latest only for prod
+
+    # MR from gmarm-* → build for review, no push
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ /^gmarm-/'
+      variables:
+        PUSH_IMAGE: "false"
+        TAG_SUFFIX: "$MR_TAG_SUFFIX"
+
+    # Env branches → build + push
+    - if: '$CI_COMMIT_BRANCH == "prod"'
+      variables:
+        PUSH_IMAGE: "true"
+        TAG_SUFFIX: "$PROD_TAG_SUFFIX"
+        TAG_LATEST: "true"
+
+    - if: '$CI_COMMIT_BRANCH == "int"'
+      variables:
+        PUSH_IMAGE: "true"
+        TAG_SUFFIX: "$INT_TAG_SUFFIX"
+
+    - if: '$CI_COMMIT_BRANCH == "test"'
+      variables:
+        PUSH_IMAGE: "true"
+        TAG_SUFFIX: "$TEST_TAG_SUFFIX"
+
     - if: '$CI_COMMIT_BRANCH == "dev"'
-  # image-digest.env is already exported by .build-common as dotenv + artifact
+      variables:
+        PUSH_IMAGE: "true"
+        TAG_SUFFIX: "$DEV_TAG_SUFFIX"
 
+    # Feature branches (gmarm-*) → opt-in push
+    - if: '$CI_COMMIT_BRANCH =~ /^gmarm-/'
+      variables:
+        PUSH_IMAGE: "$PUSH_ON_FEATURE"
+        TAG_SUFFIX: "$FEATURE_TAG_SUFFIX"
+      when: always
 
-container_scan_dev:
-  stage: scan
-  image: alpine:3.20
-  needs:
-    - job: build_dev
-      artifacts: true
-  rules:
-    - if: '$CI_COMMIT_BRANCH == "dev"'
-  script: |
-    set -euo pipefail
-    echo "=== Container scan (dev) ==="
-
-    # Show tag form
-    echo "Tag ref: ${IMAGE_ENV_PATH}:${IMAGE_TAG}"
-
-    # Show digest form (immutable) if available
-    if [ -n "${IMAGE_DIGEST:-}" ] && [ "${IMAGE_DIGEST}" != "skipped" ]; then
-      echo "Digest ref:  ${IMAGE_ENV_PATH}@sha256:${IMAGE_DIGEST}"
-    else
-      echo "Digest ref:  unavailable (no push or digest not resolved)"
-    fi
+    # Skip everything else
+    - when: never
 
 
 
