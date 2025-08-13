@@ -1,0 +1,20 @@
+# release.gitlab-ci.yml
+stages:
+  - release
+.release-cli-job: &release-cli-job
+  image: registry.gitlab.com/gitlab-org/release-cli:latest
+  before_script:
+    - echo "Running Release CLI v$(release-cli --version)"
+
+release:prepare:
+  extends: .release-cli-job
+  stage: release
+  script:
+    - release-cli create --name "draft" --draft
+    - echo "Draft created"
+
+release:publish:
+  extends: .release-cli-job
+  stage: release
+  script:
+    - release-cli promote --id 123

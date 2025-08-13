@@ -1,0 +1,12 @@
+# Auto scan on MRs into dev|test|int|main
+.rule:scan-on-mr-to-env:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME =~ /^(dev|test|int|main)$/'
+      when: on_success
+    - when: never
+
+# Manual scan trigger (always visible, never auto-run)
+.rule:scan-manual:
+  rules:
+    - when: manual
+      allow_failure: false   # set to true if you don't want to block pipeline on failure
