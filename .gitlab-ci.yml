@@ -1,83 +1,121 @@
+# -------------------------------------------------------------------
+# Example CI Pipeline
+# -------------------------------------------------------------------
 include:
-  - local: '.ci-templates/docker.gitlab-ci.yml'
-  - local: '.ci-templates/secrets-analyzer.gitlab-ci.yml'
+  - local: '.gitlab/job-rules.gitlab-ci.yml'     # ➊ rules first
+  - local: '.gitlab/secrets.gitlab-ci.yml'       # scans can !reference rules now
+  - local: '.gitlab/docker.gitlab-ci.yml'
+  - local: '.gitlab/deploy.gitlab-ci.yml'
+  - local: '.gitlab/check-latest-tag-in-changelog.yml'
 
-stages:
-  - build
-  - scan
-  - release
+stages: [verify, scan, build, deploy, release]
 
-# -----------------------------------------------------------
-# Feature branch build
-# -----------------------------------------------------------
-build_feature:
-  stage: build
-  extends: [".build-common"]
-  variables:
-    IMAGE_ENV_PATH: "$CI_REGISTRY_IMAGE/app"  # e.g., registry.example.com/group/project/app
-    RELEASE_IMAGE: "false"   # CRITICAL: Never push feature builds
-    TAG_SUFFIX: ""           # No suffix for feature branches
+variables:
+  APP_NAME: templates
+  DEV_TAG_SUFFIX: "dev"
+  TEST_TAG_SUFFIX: "test"
+  INT_TAG_SUFFIX:  "int"
+  PROD_TAG_SUFFIX: "prod"
+  MR_TAG_SUFFIX:   "mr"
+  FEATURE_TAG_SUFFIX: "feat"
+  PUSH_ON_FEATURE: "false"
+
+workflow:
   rules:
-    - if: $CI_COMMIT_BRANCH =~ /^gmarm-/
+    - if: '$CI_PIPELINE_SOURCE == "push"'
+      when: always
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: always
+    - when: never
 
 # ---------------------------
-# Build & push for dev branch
+# Build
 # ---------------------------
-build_dev:
+build:
   stage: build
+  interruptible: true                     # ➋ cancel stale builds on new commits
   extends: .build-common
-  variables:
-    # override per-service as needed
-    IMAGE_ENV_PATH: "$CI_REGISTRY_IMAGE/python"
-    TAG_SUFFIX: "dev"        # dev-a1b2c3d
-    PUSH_IMAGE: "true"       # push so dev cluster can pull it
-    TAG_LATEST: "false"      # don't pollute :latest
-    RELEASE_IMAGE: "false"
+
+  # Ensure downstream jobs can read the immutable ref
+  # (uncomment if .build-common doesn't already do this)
+  # artifacts:
+  #   reports:
+  #     dotenv: image-digest.env
+
   rules:
+    # Tag builds → release image
+    - if: '$CI_COMMIT_TAG'
+      variables:
+        RELEASE_IMAGE: "true"
+        PUSH_IMAGE: "true"
+        TAG_SUFFIX: ""
+        TAG_LATEST: "false"
+
+    # MR from gmarm-* → build for review, no push
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ /^gmarm-/'
+      variables:
+        PUSH_IMAGE: "false"
+        TAG_SUFFIX: "$MR_TAG_SUFFIX"
+
+    # Env branches → build + push
+    - if: '$CI_COMMIT_BRANCH == "prod"'
+      variables:
+        PUSH_IMAGE: "true"
+        TAG_SUFFIX: "$PROD_TAG_SUFFIX"
+        TAG_LATEST: "true"
+
+    - if: '$CI_COMMIT_BRANCH == "int"'
+      variables:
+        PUSH_IMAGE: "true"
+        TAG_SUFFIX: "$INT_TAG_SUFFIX"
+
+    - if: '$CI_COMMIT_BRANCH == "test"'
+      variables:
+        PUSH_IMAGE: "true"
+        TAG_SUFFIX: "$TEST_TAG_SUFFIX"
+
     - if: '$CI_COMMIT_BRANCH == "dev"'
-  # image-digest.env is already exported by .build-common as dotenv + artifact
+      variables:
+        PUSH_IMAGE: "true"
+        TAG_SUFFIX: "$DEV_TAG_SUFFIX"
 
+    # Feature branches (gmarm-*) → opt-in push
+    - if: '$CI_COMMIT_BRANCH =~ /^gmarm-/'
+      variables:
+        PUSH_IMAGE: "$PUSH_ON_FEATURE"
+        TAG_SUFFIX: "$FEATURE_TAG_SUFFIX"
+      when: always
 
-container_scan_dev:
-  stage: scan
-  image: alpine:3.20
+    # Skip everything else
+    - when: never
+
+# ---------------------------
+# Release
+# ---------------------------
+release:create:
+  stage: release
+  image: registry.gitlab.com/gitlab-org/release-cli:latest
+  rules:
+    - if: '$CI_COMMIT_TAG'
   needs:
-    - job: build_dev
+    - job: build
       artifacts: true
-  rules:
-    - if: '$CI_COMMIT_BRANCH == "dev"'
-  script: |
-    set -euo pipefail
-    echo "=== Container scan (dev) ==="
-
-    # Show tag form
-    echo "Tag ref:     ${IMAGE_ENV_PATH}:${IMAGE_TAG}"
-
-    # Show digest form (immutable) if available
-    if [ -n "${IMAGE_DIGEST:-}" ] && [ "${IMAGE_DIGEST}" != "skipped" ]; then
-      echo "Digest ref:  ${IMAGE_ENV_PATH}@sha256:${IMAGE_DIGEST}"
-    else
-      echo "Digest ref:  unavailable (no push or digest not resolved)"
-    fi
-
-
-grype_scan_dev:
-  stage: scan
-  image:
-    name: anchore/grype:latest
-    entrypoint: [""]   # clears the image’s ENTRYPOINT
-  needs:
-    - job: build_dev
-      artifacts: true
-  rules:
-    - if: '$CI_COMMIT_BRANCH == "dev"'
-  variables:
-    GIT_STRATEGY: none
   before_script:
-    - docker login -u "$CI_REGISTRY_USER" -p "$CI_JOB_TOKEN" "$CI_REGISTRY"
-    - source image-digest.env
+    - NOTES=RELEASE_NOTES.md
+    - IMAGE="(not available)"
+    - if [ -f image-digest.env ]; then . image-digest.env; IMAGE="${IMAGE_REF}"; fi
+    - |
+      {
+        echo "Release ${CI_COMMIT_TAG}"
+        echo
+        echo "Pipeline: ${CI_PIPELINE_URL}"
+        echo "Commit:   ${CI_PROJECT_URL}/-/commit/${CI_COMMIT_SHA}"
+        echo
+        echo "Image:"
+        echo "\`${IMAGE}\`"
+      } > "${NOTES}"
   script:
-    - grype "$IMAGE_REF" -o json > gl-container-scanning-report.json
-  artifacts:
-    reports:
-      container_scanning: gl-container-scanning-report.json
+    - release-cli create
+        --name "Release ${CI_COMMIT_TAG}"
+        --tag-name "${CI_COMMIT_TAG}"
+        --description "$(cat "${NOTES}")"
