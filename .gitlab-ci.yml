@@ -7,7 +7,7 @@ include:
   - local: '.gitlab/docker.gitlab-ci.yml'
   - local: '.gitlab/deploy.gitlab-ci.yml'
 
-stages: [verify, scan, build, deploy, release]
+stages: [verify, build, scan, deploy, release]
 
 variables:
   APP_NAME: templates
