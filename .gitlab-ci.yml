@@ -1,44 +1,23 @@
 # -------------------------------------------------------------------
 # Example CI Pipeline
 # -------------------------------------------------------------------
-# Stages:
-#   1. Scan    - Runs secrets scan from .gitlab/secrets.gitlab-ci.yml
-#   2. Build   - Uses .build-common from .gitlab/docker.gitlab-ci.yml
-#   4. Deploy  - Uses jobs from .gitlab/deploy.gitlab-ci.yml
-#
-# Notes:
-#   - Secrets job is dev-only (rules inside secrets.gitlab-ci.yml)
-#   - Build pushes on env branches and tags; skips on others
-#   - Deploy jobs pick up build artifacts (image-digest.env) for exact image refs
-# -------------------------------------------------------------------
-
 include:
   - local: '.gitlab/docker.gitlab-ci.yml'
   - local: '.gitlab/deploy.gitlab-ci.yml'
   - local: '.gitlab/secrets.gitlab-ci.yml'
 
-stages:
-  - scan
-  - build
-  - deploy
-  - release
+stages: [scan, build, deploy, release]
 
-# Default variables for this project
 variables:
   APP_NAME: templates
-
-  # Tag suffixes (override at group/project level if needed)
   DEV_TAG_SUFFIX: "dev"
   TEST_TAG_SUFFIX: "test"
-  INT_TAG_SUFFIX: "int"
+  INT_TAG_SUFFIX:  "int"
   PROD_TAG_SUFFIX: "prod"
-  MR_TAG_SUFFIX: "mr"
+  MR_TAG_SUFFIX:   "mr"
   FEATURE_TAG_SUFFIX: "feat"
-
-  # Feature branches only push if explicitly enabled
   PUSH_ON_FEATURE: "false"
 
-# Only run pipelines on pushes or MRs
 workflow:
   rules:
     - if: '$CI_PIPELINE_SOURCE == "push"'
@@ -48,13 +27,15 @@ workflow:
     - when: never
 
 # ---------------------------
-# Build job
+# Build
 # ---------------------------
 build:
   stage: build
   extends: .build-common
-  # variables:
-  #   IMAGE_ENV_PATH: "$CI_REGISTRY_IMAGE/$APP_NAME"
+  # If your .build-common writes image-digest.env, keep it. If not, add it:
+  # artifacts:
+  #   reports:
+  #     dotenv: image-digest.env
 
   rules:
     # Tag builds → release image
@@ -63,7 +44,7 @@ build:
         RELEASE_IMAGE: "true"
         PUSH_IMAGE: "true"
         TAG_SUFFIX: ""
-        TAG_LATEST: "false"   # :latest only for prod
+        TAG_LATEST: "false"
 
     # MR from gmarm-* → build for review, no push
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ /^gmarm-/'
@@ -103,22 +84,39 @@ build:
     # Skip everything else
     - when: never
 
-
-
+# ---------------------------
+# Release
+# ---------------------------
+# Use native 'release:' keyword, not release-cli. Consume image-digest.env to
+# attach the immutable image ref as an asset link.
 release:publish:
   stage: release
-  image: registry.gitlab.com/gitlab-org/release-cli:latest
+  needs:
+    - job: build
+      artifacts: true
+  image: registry.gitlab.com/gitlab-org/release-cli:latest  # or alpine:3.20
   rules:
-    - if: '$CI_COMMIT_TAG'      # only when you push a tag
+    - if: '$CI_COMMIT_TAG'                 # run only for tag pipelines
+      when: on_success
+    - when: never
+
+  before_script:
+    - if [ -f image-digest.env ]; then source image-digest.env; fi
+    # Expect IMAGE_REF like: registry/path/app@sha256:...
+    - echo "IMAGE_REF=${IMAGE_REF:-unset}"
+
   script:
-    - echo "Creating GitLab Release for $CI_COMMIT_TAG"
+    - echo "Publishing GitLab Release for $CI_COMMIT_TAG"
+
   release:
     tag_name: "$CI_COMMIT_TAG"
     name: "Release $CI_COMMIT_TAG"
     description: "Automated release from pipeline"
-    # optional assets (point to job artifacts, package URLs, etc.)
     assets:
       links:
-        - name: "artifact.tar.gz"
+        # Prefer immutable ref over fragile UI links requiring registry ID
+        - name: "Container image (immutable)"
+          url: "oci://${IMAGE_REF:-$CI_REGISTRY_IMAGE/$APP_NAME:$CI_COMMIT_TAG}"
+        # Also attach pipeline artifacts bundle (if any)
+        - name: "Build artifacts"
           url: "${CI_PROJECT_URL}/-/jobs/${CI_JOB_ID}/artifacts/download"
-
