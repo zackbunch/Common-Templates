@@ -2,10 +2,10 @@
 # Example CI Pipeline
 # -------------------------------------------------------------------
 include:
+  - local: '.gitlab/job-rules.gitlab-ci.yml'     # ➊ rules first
+  - local: '.gitlab/secrets.gitlab-ci.yml'       # scans can !reference rules now
   - local: '.gitlab/docker.gitlab-ci.yml'
   - local: '.gitlab/deploy.gitlab-ci.yml'
-  - local: '.gitlab/secrets.gitlab-ci.yml'
-  - local: '.gitlab/job-rules.yml'
   - local: '.gitlab/check-latest-tag-in-changelog.yml'
 
 stages: [verify, scan, build, deploy, release]
@@ -33,8 +33,11 @@ workflow:
 # ---------------------------
 build:
   stage: build
+  interruptible: true                     # ➋ cancel stale builds on new commits
   extends: .build-common
-  # If your .build-common writes image-digest.env, keep it. If not, add it:
+
+  # Ensure downstream jobs can read the immutable ref
+  # (uncomment if .build-common doesn't already do this)
   # artifacts:
   #   reports:
   #     dotenv: image-digest.env
@@ -86,11 +89,14 @@ build:
     # Skip everything else
     - when: never
 
+# ---------------------------
+# Release
+# ---------------------------
 release:create:
   stage: release
   image: registry.gitlab.com/gitlab-org/release-cli:latest
   rules:
-    - if: '$CI_COMMIT_TAG'   # run only for tag pipelines
+    - if: '$CI_COMMIT_TAG'
   needs:
     - job: build
       artifacts: true
@@ -112,4 +118,4 @@ release:create:
     - release-cli create
         --name "Release ${CI_COMMIT_TAG}"
         --tag-name "${CI_COMMIT_TAG}"
-        --description "$(cat ${NOTES})"
+        --description "$(cat "${NOTES}")"
