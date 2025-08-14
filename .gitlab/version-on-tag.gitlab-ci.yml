@@ -1,0 +1,18 @@
+# .ci-templates/version-on-tag.yml
+release:version-from-tag:
+  image: alpine:3.20
+  stage: release
+  rules: !reference [.rule:tag-only, rules]
+  script:
+    - set -euo pipefail
+    - echo "Tag detected ${CI_COMMIT_TAG}"
+    - echo "${CI_COMMIT_TAG}" > VERSION
+    - echo "VERSION=${CI_COMMIT_TAG}" > version.env
+    - cat VERSION
+  artifacts:
+    paths:
+      - VERSION
+    reports:
+      dotenv: version.env
+    when: always
+    expire_in: 1 week
