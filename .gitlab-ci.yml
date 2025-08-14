@@ -28,11 +28,6 @@ workflow:
       when: always
     - when: never
 
-glab:
-  stage: build
-  script:
-    - which glab
-
 # ---------------------------
 # Build
 # ---------------------------
