@@ -45,27 +45,28 @@
     # Safe for /bin/sh and bash
     set -euo pipefail 2>/dev/null || set -eu
 
-    # --- Resolve & sanitize APP_NAME (docker-compliant) ---
-    # If APP_NAME is unset, default from CI_PROJECT_NAME.
-    RAW_APP_NAME="${APP_NAME:-${CI_PROJECT_NAME:-app}}"
-    # Lowercase; spaces->-; strip invalid chars; allow a-z 0-9 . _ -
-    APP_NAME="$(printf '%s' "${RAW_APP_NAME}" \
-      | tr '[:upper:] ' '[:lower:]-' \
-      | tr -cd 'a-z0-9._-')"
-    if [ -z "${APP_NAME}" ]; then
-      echo "ERROR: APP_NAME resolved to empty after sanitization (from '${RAW_APP_NAME}')" >&2
-      exit 1
-    fi
-
-    # --- Derive IMAGE_ENV_PATH if not set ---
+    # --- Derive IMAGE_ENV_PATH (no double nesting) ---
     if [ -z "${IMAGE_ENV_PATH:-}" ]; then
-      if [ -n "${CI_REGISTRY_IMAGE:-}" ]; then
-        IMAGE_ENV_PATH="${CI_REGISTRY_IMAGE}/${APP_NAME}"
-        echo "Derived IMAGE_ENV_PATH=${IMAGE_ENV_PATH}"
-      else
-        echo "ERROR: IMAGE_ENV_PATH must be defined (and CI_REGISTRY_IMAGE available)!" >&2
+      if [ -z "${CI_REGISTRY_IMAGE:-}" ]; then
+        echo "ERROR: CI_REGISTRY_IMAGE is empty; set IMAGE_ENV_PATH explicitly" >&2
         exit 1
       fi
+
+      if [ -n "${APP_NAME:-}" ]; then
+        # sanitize APP_NAME only if provided
+        RAW_APP_NAME="${APP_NAME}"
+        APP_NAME="$(printf '%s' "${RAW_APP_NAME}" \
+          | tr '[:upper:] ' '[:lower:]-' \
+          | tr -cd 'a-z0-9._-')"
+        if [ -z "${APP_NAME}" ]; then
+          echo "ERROR: APP_NAME resolved to empty after sanitization (from '${RAW_APP_NAME}')" >&2
+          exit 1
+        fi
+        IMAGE_ENV_PATH="${CI_REGISTRY_IMAGE}/${APP_NAME}"
+      else
+        IMAGE_ENV_PATH="${CI_REGISTRY_IMAGE}"
+      fi
+      echo "Derived IMAGE_ENV_PATH=${IMAGE_ENV_PATH}"
     fi
 
     # --- Figure out build MODE (for readable logs) ---
@@ -99,8 +100,9 @@
         exit 1
       fi
       RAW_TAG="${CI_COMMIT_TAG}"
-      PUSH_IMAGE="true"
-      TAG_LATEST="true"
+      # defaults, without clobbering rule-provided values
+      [ "${PUSH_IMAGE:-false}" = "true" ] || PUSH_IMAGE="true"
+      : "${TAG_LATEST:=false}"
     else
       RAW_TAG="${CI_COMMIT_TAG:-${CI_COMMIT_SHORT_SHA}}"
     fi
@@ -118,7 +120,6 @@
     # ---- Nice, human logs up front ----
     echo "========================================"
     echo "BUILD MODE        : ${MODE}"
-    echo "APP_NAME          : ${APP_NAME}"
     echo "RELEASE_IMAGE     : ${RELEASE_IMAGE}"
     echo "PUSH_IMAGE        : ${PUSH_IMAGE}"
     echo "TAG_LATEST        : ${TAG_LATEST}"
@@ -129,49 +130,6 @@
     echo "DOCKER_CONTEXT    : ${DOCKER_CONTEXT}"
     echo "DOCKERFILE        : ${DOCKERFILE}"
     echo "========================================"
-
-    # --- Build (OCI labels inline; works in /bin/sh) ---
-    docker build --pull \
-      -f "${DOCKERFILE}" \
-      --label "org.opencontainers.image.source=${CI_PROJECT_URL:-}" \
-      --label "org.opencontainers.image.revision=${CI_COMMIT_SHA:-}" \
-      --label "org.opencontainers.image.created=$(date -u +%FT%TZ)" \
-      --label "org.opencontainers.image.ref.name=${CI_COMMIT_REF_NAME:-}" \
-      -t "${IMAGE_ENV_PATH}:${IMAGE_TAG}" \
-      "${DOCKER_CONTEXT}"
-
-    # --- Tag :latest if requested ---
-    if [ "${TAG_LATEST}" = "true" ]; then
-      docker tag "${IMAGE_ENV_PATH}:${IMAGE_TAG}" "${IMAGE_ENV_PATH}:latest"
-    fi
-
-    # --- Push (if enabled) ---
-    if [ "${PUSH_IMAGE}" = "true" ]; then
-      docker push "${IMAGE_ENV_PATH}:${IMAGE_TAG}"
-      if [ "${TAG_LATEST}" = "true" ]; then
-        docker push "${IMAGE_ENV_PATH}:latest"
-      fi
-      # Resolve digest after push so RepoDigests is populated
-      DIGEST_LINE="$(docker inspect --format='{{index .RepoDigests 0}}' "${IMAGE_ENV_PATH}:${IMAGE_TAG}" 2>/dev/null || true)"
-      if [ -n "${DIGEST_LINE}" ]; then
-        IMAGE_REF_VALUE="${DIGEST_LINE}"
-        IMAGE_DIGEST_VALUE="${DIGEST_LINE#*@sha256:}"
-      else
-        IMAGE_REF_VALUE="skipped"
-        IMAGE_DIGEST_VALUE="skipped"
-      fi
-    else
-      IMAGE_REF_VALUE="skipped"
-      IMAGE_DIGEST_VALUE="skipped"
-    fi
-
-    # --- Echo the same lines that go into the env file ---
-    echo "--- artifact env ---"
-    echo "IMAGE_ENV_PATH=${IMAGE_ENV_PATH}"
-    echo "IMAGE_TAG=${IMAGE_TAG}"
-    echo "IMAGE_DIGEST=${IMAGE_DIGEST_VALUE}"
-    echo "IMAGE_REF=${IMAGE_REF_VALUE}"
-    echo "--------------------"
 
     # --- Write env file for downstream jobs ---
     {
