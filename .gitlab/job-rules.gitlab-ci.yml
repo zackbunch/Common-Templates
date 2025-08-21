@@ -11,7 +11,7 @@
 
 # -------------------------------------------------------------------
 # Run automatically on merge request pipelines targeting specific env
-# branches (dev, test, int, main). Denies all other branches/pipeline types.
+# branches (dev, test, int, main, master). Denies all other branches/pipeline types.
 # Useful for scan jobs you only want before merging into critical branches.
 # -------------------------------------------------------------------
 .rule:scan-on-mr-to-env:
