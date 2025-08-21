@@ -31,7 +31,7 @@ workflow:
 # ---------------------------
 # Build
 # ---------------------------
-build:
+build:docker:
   stage: build
   interruptible: true
   extends: .build-common
