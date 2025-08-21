@@ -215,70 +215,45 @@
 
 
 
-# Example:
-#   build:
-#     extends: .build-common
-#     rules: !reference [.rule:build-matrix, rules]
+# .gitlab/job-rules.gitlab-ci.yml
 .rule:build-matrix:
   rules:
     - if: '$CI_PIPELINE_SOURCE == "schedule"'
       when: never
-      variables:
-        DEBUG_REASON: "Skipped: schedule pipeline"
 
-    # Tags → release behavior
+    # Tags → release push
     - if: '$CI_COMMIT_TAG'
       variables:
         RELEASE_IMAGE: "true"
         PUSH_IMAGE: "true"
         TAG_SUFFIX: ""
         TAG_LATEST: "false"
-        DEBUG_REASON: "Tag pipeline → release build"
+        DEBUG_REASON: "tag pipeline"
 
-    # MR from gmarm-* or gmarm/* source branches
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ /^(?i:gmarm)[-\/]/'
-      variables:
-        PUSH_IMAGE: "$PUSH_ON_FEATURE"
-        TAG_SUFFIX: "$MR_TAG_SUFFIX"
-        DEBUG_REASON: "MR pipeline → gmarm feature source branch"
-
-    # Pushes to gmarm-* or gmarm/* branches
-    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_TAG == null && $CI_COMMIT_BRANCH =~ /^(?i:gmarm)[-\/]/'
+    # Feature branches (dash)
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_TAG == null && $CI_COMMIT_BRANCH =~ /^gmarm-/'
       variables:
         PUSH_IMAGE: "$PUSH_ON_FEATURE"
         TAG_SUFFIX: "$FEATURE_TAG_SUFFIX"
-        DEBUG_REASON: "Push pipeline → gmarm feature branch"
+        DEBUG_REASON: "feature push (gmarm-)"
 
-    # Env branch pushes
-    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "prod"'
-      variables:
-        PUSH_IMAGE: "true"
-        TAG_SUFFIX: "$PROD_TAG_SUFFIX"
-        TAG_LATEST: "true"
-        DEBUG_REASON: "Push pipeline → prod branch"
-    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "int"'
-      variables:
-        PUSH_IMAGE: "true"
-        TAG_SUFFIX: "$INT_TAG_SUFFIX"
-        DEBUG_REASON: "Push pipeline → int branch"
-    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "test"'
-      variables:
-        PUSH_IMAGE: "true"
-        TAG_SUFFIX: "$TEST_TAG_SUFFIX"
-        DEBUG_REASON: "Push pipeline → test branch"
-    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "dev"'
-      variables:
-        PUSH_IMAGE: "true"
-        TAG_SUFFIX: "$DEV_TAG_SUFFIX"
-        DEBUG_REASON: "Push pipeline → dev branch"
-
-    # MR targeting env branches
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME =~ /^(dev|test|int|prod)$/'
+    # Feature branches (slash)
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_TAG == null && $CI_COMMIT_BRANCH =~ /^gmarm\//'
       variables:
         PUSH_IMAGE: "$PUSH_ON_FEATURE"
-        TAG_SUFFIX: "$MR_TAG_SUFFIX"
-        DEBUG_REASON: "MR pipeline → targeting env branch"
+        TAG_SUFFIX: "$FEATURE_TAG_SUFFIX"
+        DEBUG_REASON: "feature push (gmarm/)"
+
+    # Env branches
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "prod"'
+      variables: { PUSH_IMAGE: "true", TAG_SUFFIX: "$PROD_TAG_SUFFIX", TAG_LATEST: "true", DEBUG_REASON: "prod push" }
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "int"'
+      variables: { PUSH_IMAGE: "true", TAG_SUFFIX: "$INT_TAG_SUFFIX", DEBUG_REASON: "int push" }
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "test"'
+      variables: { PUSH_IMAGE: "true", TAG_SUFFIX: "$TEST_TAG_SUFFIX", DEBUG_REASON: "test push" }
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "dev"'
+      variables: { PUSH_IMAGE: "true", TAG_SUFFIX: "$DEV_TAG_SUFFIX", DEBUG_REASON: "dev push" }
 
     - when: never
       variables:
-        DEBUG_REASON: "No matching rule (fallback)"
+        DEBUG_REASON: "no matching build rule"
