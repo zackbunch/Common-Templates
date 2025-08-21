@@ -1,190 +1,96 @@
+# .gitlab/build.gitlab-ci.yml
 .build-dind:
   image: docker:24.0.5
-  services:
-    - name: docker:24.0.5-dind
-      alias: docker
+  services: [ "docker:24.0.5-dind" ]
   variables:
     DOCKER_DRIVER: overlay2
     DOCKER_TLS_CERTDIR: ""
 
-
-
 .build-common:
   extends: .build-dind
   variables:
-    TAG_LATEST: "false"
     PUSH_IMAGE: "false"
     RELEASE_IMAGE: "false"
+    TAG_LATEST: "false"
     TAG_SUFFIX: ""
     DOCKER_CONTEXT: "."
     DOCKERFILE: "Dockerfile"
-
-    FEATURE_PREFIX: "gmarm-"
-    FEATURE_TAG_SUFFIX: ""
-    PUSH_ON_FEATURE: "false"
-
-    DEV_BRANCH:  "dev"
-    TEST_BRANCH: "test"
-    INT_BRANCH:  "int"
-    PROD_BRANCH: "prod"
-
-    DEV_TAG_SUFFIX:  "dev"
-    TEST_TAG_SUFFIX: "test"
-    INT_TAG_SUFFIX:  "int"
-    PROD_TAG_SUFFIX: "prod"
-
-    MR_TAG_SUFFIX: "mr"
-
-    # Optional: teams can set APP_NAME explicitly; else we derive from CI_PROJECT_NAME
-    # APP_NAME: "my-service"
-
   before_script:
+    - set -euo pipefail
+    - echo "Login $CI_REGISTRY as $CI_REGISTRY_USER"
     - docker login -u "$CI_REGISTRY_USER" -p "$CI_JOB_TOKEN" "$CI_REGISTRY"
-
   script: |
-    # Safe for /bin/sh and bash
-    set -euo pipefail 2>/dev/null || set -eu
+    set -euo pipefail
 
-    # --- Resolve & sanitize APP_NAME (docker-compliant) ---
-    # If APP_NAME is unset, default from CI_PROJECT_NAME.
-    RAW_APP_NAME="${APP_NAME:-${CI_PROJECT_NAME:-app}}"
-    # Lowercase; spaces->-; strip invalid chars; allow a-z 0-9 . _ -
-    APP_NAME="$(printf '%s' "${RAW_APP_NAME}" \
-      | tr '[:upper:] ' '[:lower:]-' \
-      | tr -cd 'a-z0-9._-')"
-    if [ -z "${APP_NAME}" ]; then
-      echo "ERROR: APP_NAME resolved to empty after sanitization (from '${RAW_APP_NAME}')" >&2
-      exit 1
+    # Image path: use project path; append /APP_NAME only if provided
+    IMAGE_REPO="${CI_REGISTRY_IMAGE}"
+    if [ -n "${APP_NAME:-}" ]; then
+      # sanitize app name
+      APP_NAME="$(printf '%s' "${APP_NAME}" | tr '[:upper:] ' '[:lower:]-' | tr -cd 'a-z0-9._-')"
+      [ -n "${APP_NAME}" ] || { echo "bad APP_NAME"; exit 1; }
+      IMAGE_REPO="${IMAGE_REPO}/${APP_NAME}"
     fi
 
-    # --- Derive IMAGE_ENV_PATH if not set ---
-    if [ -z "${IMAGE_ENV_PATH:-}" ]; then
-      if [ -n "${CI_REGISTRY_IMAGE:-}" ]; then
-        IMAGE_ENV_PATH="${CI_REGISTRY_IMAGE}/${APP_NAME}"
-        echo "Derived IMAGE_ENV_PATH=${IMAGE_ENV_PATH}"
-      else
-        echo "ERROR: IMAGE_ENV_PATH must be defined (and CI_REGISTRY_IMAGE available)!" >&2
-        exit 1
-      fi
-    fi
-
-    # --- Figure out build MODE (for readable logs) ---
-    MODE="other"
-    if [ "${RELEASE_IMAGE}" = "true" ] || [ -n "${CI_COMMIT_TAG:-}" ]; then
-      MODE="release"
-    elif [ "${CI_COMMIT_BRANCH:-}" = "${PROD_BRANCH}" ]; then
-      MODE="prod"
-    elif [ "${CI_COMMIT_BRANCH:-}" = "${INT_BRANCH}" ]; then
-      MODE="int"
-    elif [ "${CI_COMMIT_BRANCH:-}" = "${TEST_BRANCH}" ]; then
-      MODE="test"
-    elif [ "${CI_COMMIT_BRANCH:-}" = "${DEV_BRANCH}" ]; then
-      MODE="dev"
-    elif [ "${CI_PIPELINE_SOURCE:-}" = "merge_request_event" ] && printf '%s' "${CI_MERGE_REQUEST_SOURCE_BRANCH_NAME:-}" | grep -Eq '^'"${FEATURE_PREFIX}" ; then
-      MODE="mr"
-    elif printf '%s' "${CI_COMMIT_BRANCH:-}" | grep -Eq '^'"${FEATURE_PREFIX}" ; then
-      MODE="feature"
-    fi
-
-    # --- Guard: suffix 'latest' ---
-    if [ "${TAG_SUFFIX}" = "latest" ]; then
-      echo "ERROR: TAG_SUFFIX cannot be 'latest' (use TAG_LATEST=true)" >&2
-      exit 1
-    fi
-
-    # --- Determine base tag (release tag or commit SHA) ---
+    # Tag value
     if [ "${RELEASE_IMAGE}" = "true" ]; then
-      if [ -z "${CI_COMMIT_TAG:-}" ]; then
-        echo "ERROR: RELEASE_IMAGE=true requires CI_COMMIT_TAG" >&2
-        exit 1
-      fi
-      RAW_TAG="${CI_COMMIT_TAG}"
-      PUSH_IMAGE="true"
-      TAG_LATEST="true"
+      [ -n "${CI_COMMIT_TAG:-}" ] || { echo "RELEASE_IMAGE requires CI_COMMIT_TAG"; exit 1; }
+      BASE_TAG="${CI_COMMIT_TAG}"
+      # default to push on release if not already set by rules
+      [ "${PUSH_IMAGE}" = "true" ] || PUSH_IMAGE="true"
     else
-      RAW_TAG="${CI_COMMIT_TAG:-${CI_COMMIT_SHORT_SHA}}"
+      BASE_TAG="${CI_COMMIT_SHORT_SHA}"
     fi
 
-    # --- Sanitize for Docker tag ---
-    SANITIZED_BASE_TAG="$(printf '%s' "${RAW_TAG}" | tr ' /' '--' | tr -cd '[:alnum:]._-')"
-    if [ -z "${SANITIZED_BASE_TAG}" ]; then
-      echo "ERROR: Computed image tag is empty after sanitization" >&2
-      exit 1
-    fi
+    # Suffix and sanitize
+    [ "${TAG_SUFFIX}" != "latest" ] || { echo "TAG_SUFFIX cannot be 'latest'"; exit 1; }
+    IMAGE_TAG="${TAG_SUFFIX:+${TAG_SUFFIX}-}${BASE_TAG}"
+    IMAGE_TAG="$(printf '%s' "${IMAGE_TAG}" | tr ' /' '--' | tr -cd '[:alnum:]._-')"
 
-    # --- Compose final tag ---
-    IMAGE_TAG="${TAG_SUFFIX:+${TAG_SUFFIX}-}${SANITIZED_BASE_TAG}"
+    echo "---- build flags ----"
+    echo "DEBUG_REASON     : ${DEBUG_REASON:-unset}"
+    echo "PIPELINE_SOURCE  : ${CI_PIPELINE_SOURCE:-}"
+    echo "BRANCH           : ${CI_COMMIT_BRANCH:-}"
+    echo "TAG              : ${CI_COMMIT_TAG:-}"
+    echo "PUSH_ON_FEATURE  : ${PUSH_ON_FEATURE:-unset}"
+    echo "PUSH_IMAGE       : ${PUSH_IMAGE}"
+    echo "RELEASE_IMAGE    : ${RELEASE_IMAGE}"
+    echo "TAG_SUFFIX       : ${TAG_SUFFIX}"
+    echo "TAG_LATEST       : ${TAG_LATEST}"
+    echo "IMAGE_REPO       : ${IMAGE_REPO}"
+    echo "IMAGE_TAG        : ${IMAGE_TAG}"
+    echo "---------------------"
 
-    # ---- Nice, human logs up front ----
-    echo "========================================"
-    echo "BUILD MODE        : ${MODE}"
-    echo "APP_NAME          : ${APP_NAME}"
-    echo "RELEASE_IMAGE     : ${RELEASE_IMAGE}"
-    echo "PUSH_IMAGE        : ${PUSH_IMAGE}"
-    echo "TAG_LATEST        : ${TAG_LATEST}"
-    echo "TAG_SUFFIX        : ${TAG_SUFFIX}"
-    echo "CI_COMMIT_REF     : ${CI_COMMIT_REF_NAME:-}"
-    echo "IMAGE_ENV_PATH    : ${IMAGE_ENV_PATH}"
-    echo "IMAGE_TAG         : ${IMAGE_TAG}"
-    echo "DOCKER_CONTEXT    : ${DOCKER_CONTEXT}"
-    echo "DOCKERFILE        : ${DOCKERFILE}"
-    echo "========================================"
-
-    # --- Build (OCI labels inline; works in /bin/sh) ---
-    docker build --pull \
-      -f "${DOCKERFILE}" \
+    docker build --pull -f "${DOCKERFILE}" \
       --label "org.opencontainers.image.source=${CI_PROJECT_URL:-}" \
       --label "org.opencontainers.image.revision=${CI_COMMIT_SHA:-}" \
       --label "org.opencontainers.image.created=$(date -u +%FT%TZ)" \
       --label "org.opencontainers.image.ref.name=${CI_COMMIT_REF_NAME:-}" \
-      -t "${IMAGE_ENV_PATH}:${IMAGE_TAG}" \
-      "${DOCKER_CONTEXT}"
+      -t "${IMAGE_REPO}:${IMAGE_TAG}" "${DOCKER_CONTEXT}"
 
-    # --- Tag :latest if requested ---
     if [ "${TAG_LATEST}" = "true" ]; then
-      docker tag "${IMAGE_ENV_PATH}:${IMAGE_TAG}" "${IMAGE_ENV_PATH}:latest"
+      docker tag "${IMAGE_REPO}:${IMAGE_TAG}" "${IMAGE_REPO}:latest"
     fi
 
-    # --- Push (if enabled) ---
     if [ "${PUSH_IMAGE}" = "true" ]; then
-      docker push "${IMAGE_ENV_PATH}:${IMAGE_TAG}"
+      echo "Pushing ${IMAGE_REPO}:${IMAGE_TAG}"
+      docker push "${IMAGE_REPO}:${IMAGE_TAG}"
       if [ "${TAG_LATEST}" = "true" ]; then
-        docker push "${IMAGE_ENV_PATH}:latest"
+        docker push "${IMAGE_REPO}:latest"
       fi
-      # Resolve digest after push so RepoDigests is populated
-      DIGEST_LINE="$(docker inspect --format='{{index .RepoDigests 0}}' "${IMAGE_ENV_PATH}:${IMAGE_TAG}" 2>/dev/null || true)"
-      if [ -n "${DIGEST_LINE}" ]; then
-        IMAGE_REF_VALUE="${DIGEST_LINE}"
-        IMAGE_DIGEST_VALUE="${DIGEST_LINE#*@sha256:}"
-      else
-        IMAGE_REF_VALUE="skipped"
-        IMAGE_DIGEST_VALUE="skipped"
-      fi
+      DIGEST="$(docker inspect --format='{{index .RepoDigests 0}}' "${IMAGE_REPO}:${IMAGE_TAG}" || true)"
     else
-      IMAGE_REF_VALUE="skipped"
-      IMAGE_DIGEST_VALUE="skipped"
+      echo "Skipping push (PUSH_IMAGE=false)"
+      DIGEST=""
     fi
 
-    # --- Echo the same lines that go into the env file ---
-    echo "--- artifact env ---"
-    echo "IMAGE_ENV_PATH=${IMAGE_ENV_PATH}"
-    echo "IMAGE_TAG=${IMAGE_TAG}"
-    echo "IMAGE_DIGEST=${IMAGE_DIGEST_VALUE}"
-    echo "IMAGE_REF=${IMAGE_REF_VALUE}"
-    echo "--------------------"
-
-    # --- Write env file for downstream jobs ---
     {
-      echo "IMAGE_ENV_PATH=${IMAGE_ENV_PATH}"
+      echo "IMAGE_ENV_PATH=${IMAGE_REPO}"
       echo "IMAGE_TAG=${IMAGE_TAG}"
-      echo "IMAGE_DIGEST=${IMAGE_DIGEST_VALUE}"
-      echo "IMAGE_REF=${IMAGE_REF_VALUE}"
-    } > "${CI_PROJECT_DIR}/image-digest.env"
-
+      echo "IMAGE_REF=${DIGEST:-skipped}"
+      echo "IMAGE_DIGEST=${DIGEST#*@sha256:}"
+    } > image-digest.env
   artifacts:
-    reports:
-      dotenv: image-digest.env
-    paths:
-      - image-digest.env
+    reports: { dotenv: image-digest.env }
+    paths: [ image-digest.env ]
     when: always
     expire_in: 1 week

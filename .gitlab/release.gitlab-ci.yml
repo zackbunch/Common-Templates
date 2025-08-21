@@ -17,17 +17,12 @@ release:version:
   rules: !reference [.rule:tag-only, rules]
   variables:
     ENFORCE_SEMVER: "false"
-    REQUIRE_PROTECTED_TAG: "false"
   before_script:
     - set -euo pipefail
   script:
     - |
       if [ -z "${CI_COMMIT_TAG:-}" ]; then
         echo "ERROR: Not running on a tag"; exit 1
-      fi
-    - |
-      if [ "${REQUIRE_PROTECTED_TAG}" = "true" ] && [ "${CI_COMMIT_REF_PROTECTED:-false}" != "true" ]; then
-        echo "ERROR: tag '${CI_COMMIT_TAG}' is not protected"; exit 1
       fi
     - |
       if [ "${ENFORCE_SEMVER}" = "true" ]; then
@@ -51,7 +46,7 @@ release:create:
   stage: release
   rules: !reference [.rule:tag-only, rules]
   needs:
-    - job: build
+    - job: build:docker
       artifacts: true
       optional: true
     - job: release:version
@@ -81,14 +76,13 @@ release:create:
         --tag-name "${CI_COMMIT_TAG}"
         --description "$(cat "${NOTES}")"
 
-
 version:compute:
   image: alpine:3.20
   stage: build
   rules:
     - if: '$CI_COMMIT_TAG'
       when: never
-    - if: '$CI_COMMIT_BRANCH'
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH'
   before_script:
     - set -euo pipefail
   script:
