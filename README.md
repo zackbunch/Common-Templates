@@ -9,6 +9,7 @@ This checklist tracks which GitLab pipeline templates have been completed and wh
 - [x] **Secrets Detection Template** – runs secret scanning during dev pipelines
 - [x] **Deploy Base Template** – registers GitLab environments, simulates deployments
 - [x] **Trigger Downstream Template** – triggers dependent builds (fan-out/fan-in)
+- [ ] **Add a job that exports the docker images for customer releases**
 
 ---
 

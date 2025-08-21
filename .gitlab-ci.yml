@@ -38,4 +38,16 @@ build:docker:
   rules: !reference [.rule:build-matrix, rules]
 
 
+debug:vars:
+  stage: verify
+  rules:
+    - if: '$CI_COMMIT_TAG'
+  script:
+    - echo "CI_COMMIT_TAG=$CI_COMMIT_TAG"
+    - echo "RELEASE_IMAGE=${RELEASE_IMAGE:-}"
+    - echo "PUSH_IMAGE=${PUSH_IMAGE:-}"
+    - echo "TAG_SUFFIX=${TAG_SUFFIX:-}"
+    - echo "IMAGE_TAG=${IMAGE_TAG:-}"
+
+
 

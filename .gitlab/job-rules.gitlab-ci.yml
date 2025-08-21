@@ -230,6 +230,7 @@
       variables:
         RELEASE_IMAGE: "true"
         PUSH_IMAGE: "true"
+        IMAGE_TAG: "$CI_COMMIT_TAG"
         TAG_SUFFIX: ""
         TAG_LATEST: "false"
 
