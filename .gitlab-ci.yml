@@ -7,8 +7,8 @@ include:
 
 stages: [build, scan, deploy, release]
 
-# variables:
-#   APP_NAME: templates
+variables:
+  APP_NAME: templates
 
 workflow:
   rules:
