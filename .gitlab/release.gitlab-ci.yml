@@ -1,20 +1,82 @@
-# release.gitlab-ci.yml
-stages:
-  - release
-.release-cli-job: &release-cli-job
+# .ci-templates/release.yml
+#
+# How to use
+# 1) include this file
+# 2) ensure a tag-only rules anchor exists: `.rule:tag-only`
+# 3) downstream jobs can `needs: [release:version]` to get $VERSION
+
+.release-cli: &release-cli
   image: registry.gitlab.com/gitlab-org/release-cli:latest
   before_script:
-    - echo "Running Release CLI v$(release-cli --version)"
+    - set -euo pipefail
+    - release-cli --version
 
-release:prepare:
-  extends: .release-cli-job
+release:version:
+  image: alpine:3.20
   stage: release
+  rules: !reference [.rule:tag-only, rules]
+  variables:
+    ENFORCE_SEMVER: "false"
+    REQUIRE_PROTECTED_TAG: "false"
+  before_script:
+    - set -euo pipefail
   script:
-    - release-cli create --name "draft" --draft
-    - echo "Draft created"
+    - |
+      if [ -z "${CI_COMMIT_TAG:-}" ]; then
+        echo "ERROR: Not running on a tag"; exit 1
+      fi
+    - |
+      if [ "${REQUIRE_PROTECTED_TAG}" = "true" ] && [ "${CI_COMMIT_REF_PROTECTED:-false}" != "true" ]; then
+        echo "ERROR: tag '${CI_COMMIT_TAG}' is not protected"; exit 1
+      fi
+    - |
+      if [ "${ENFORCE_SEMVER}" = "true" ]; then
+        case "${CI_COMMIT_TAG}" in
+          ([0-9]*.[0-9]*.[0-9]*|[0-9]*.[0-9]*.[0-9]*-*) : ;;
+          (*) echo "ERROR: tag '${CI_COMMIT_TAG}' is not SemVer"; exit 1 ;;
+        esac
+      fi
+    - echo "${CI_COMMIT_TAG}" > VERSION
+    - printf 'VERSION=%s\n' "${CI_COMMIT_TAG}" > version.env
+  artifacts:
+    expose_as: "VERSION"
+    paths: [VERSION]
+    reports:
+      dotenv: version.env
+    when: always
+    expire_in: 1 week
 
-release:publish:
-  extends: .release-cli-job
+release:create:
+  extends: .release-cli
   stage: release
+  rules: !reference [.rule:tag-only, rules]
+  needs:
+    - job: build
+      artifacts: true
+      optional: true
+    - job: release:version
+      artifacts: true
+      optional: true
+  before_script:
+    - set -euo pipefail
+    - NOTES=RELEASE_NOTES.md
+    - IMAGE="(not available)"
+    - VERSION_STR="${CI_COMMIT_TAG:-unknown}"
+    - if [ -f image-digest.env ]; then . image-digest.env; IMAGE="${IMAGE_REF:-$IMAGE}"; fi
+    - if [ -f version.env ]; then . version.env; VERSION_STR="${VERSION:-$VERSION_STR}"; fi
+    - |
+      {
+        echo "Release ${CI_COMMIT_TAG}"
+        echo
+        echo "Version:  ${VERSION_STR}"
+        echo "Pipeline: ${CI_PIPELINE_URL}"
+        echo "Commit:   ${CI_PROJECT_URL}/-/commit/${CI_COMMIT_SHA}"
+        echo
+        echo "Image:"
+        echo "\`${IMAGE}\`"
+      } > "${NOTES}"
   script:
-    - release-cli promote --id 123
+    - release-cli create
+        --name "Release ${CI_COMMIT_TAG}"
+        --tag-name "${CI_COMMIT_TAG}"
+        --description "$(cat "${NOTES}")"
