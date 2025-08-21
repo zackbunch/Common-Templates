@@ -101,7 +101,7 @@ version:compute:
     - printf 'VERSION=%s\n' "${VERSION}" > version.env
     - echo "Computed VERSION=${VERSION}"
   artifacts:
-    expose_as: "VERSION (compute)"
+    expose_as: "VERSION"
     paths: [VERSION]
     reports:
       dotenv: version.env
