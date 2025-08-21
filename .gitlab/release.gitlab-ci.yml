@@ -46,7 +46,7 @@ release:create:
   stage: release
   rules: !reference [.rule:tag-only, rules]
   needs:
-    - job: build
+    - job: build:docker
       artifacts: true
       optional: true
     - job: release:version
