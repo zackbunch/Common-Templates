@@ -6,7 +6,7 @@ include:
   - local: '.gitlab/secrets.gitlab-ci.yml'       # scans can !reference rules now
   - local: '.gitlab/docker.gitlab-ci.yml'
   - local: '.gitlab/deploy.gitlab-ci.yml'
-  - local: '.gitlab/version-on-tag.gitlab-ci.yml'
+  - local: '.gitlab/release.gitlab-ci.yml'
 
 stages: [verify, build, scan, deploy, release]
 
@@ -70,29 +70,3 @@ build:
     # 5) deny the rest
     - when: never
 
-release:create:
-  stage: release
-  image: registry.gitlab.com/gitlab-org/release-cli:latest
-  rules: !reference [.rule:tag-only, rules]
-  needs:
-    - job: build
-      artifacts: true
-  before_script:
-    - NOTES=RELEASE_NOTES.md
-    - IMAGE="(not available)"
-    - if [ -f image-digest.env ]; then . image-digest.env; IMAGE="${IMAGE_REF}"; fi
-    - |
-      {
-        echo "Release ${CI_COMMIT_TAG}"
-        echo
-        echo "Pipeline: ${CI_PIPELINE_URL}"
-        echo "Commit:   ${CI_PROJECT_URL}/-/commit/${CI_COMMIT_SHA}"
-        echo
-        echo "Image:"
-        echo "\`${IMAGE}\`"
-      } > "${NOTES}"
-  script:
-    - release-cli create
-        --name "Release ${CI_COMMIT_TAG}"
-        --tag-name "${CI_COMMIT_TAG}"
-        --description "$(cat "${NOTES}")"
