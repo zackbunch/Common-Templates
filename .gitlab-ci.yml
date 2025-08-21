@@ -1,17 +1,14 @@
-# -------------------------------------------------------------------
-# Example CI Pipeline
-# -------------------------------------------------------------------
 include:
-  - local: '.gitlab/job-rules.gitlab-ci.yml'     # ➊ rules first
-  - local: '.gitlab/secrets.gitlab-ci.yml'       # scans can !reference rules now
+  - local: '.gitlab/job-rules.gitlab-ci.yml'
+  - local: '.gitlab/secrets.gitlab-ci.yml'
   - local: '.gitlab/docker.gitlab-ci.yml'
   - local: '.gitlab/deploy.gitlab-ci.yml'
   - local: '.gitlab/release.gitlab-ci.yml'
 
-stages: [verify, build, scan, deploy, release]
+stages: [build, scan, deploy, release]
 
-variables:
-  APP_NAME: templates
+# variables:
+#   APP_NAME: templates
 
 workflow:
   rules:
