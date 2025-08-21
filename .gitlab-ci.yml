@@ -12,13 +12,6 @@ stages: [verify, build, scan, deploy, release]
 
 variables:
   APP_NAME: templates
-  DEV_TAG_SUFFIX: "dev"
-  TEST_TAG_SUFFIX: "test"
-  INT_TAG_SUFFIX:  "int"
-  PROD_TAG_SUFFIX: "prod"
-  MR_TAG_SUFFIX:   "mr"
-  FEATURE_TAG_SUFFIX: "feat"
-  PUSH_ON_FEATURE: "false"
 
 workflow:
   rules:
@@ -38,16 +31,7 @@ build:docker:
   rules: !reference [.rule:build-matrix, rules]
 
 
-debug:vars:
-  stage: verify
-  rules:
-    - if: '$CI_COMMIT_TAG'
-  script:
-    - echo "CI_COMMIT_TAG=$CI_COMMIT_TAG"
-    - echo "RELEASE_IMAGE=${RELEASE_IMAGE:-}"
-    - echo "PUSH_IMAGE=${PUSH_IMAGE:-}"
-    - echo "TAG_SUFFIX=${TAG_SUFFIX:-}"
-    - echo "IMAGE_TAG=${IMAGE_TAG:-}"
+
 
 
 
