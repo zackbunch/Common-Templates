@@ -227,7 +227,7 @@
         RELEASE_IMAGE: "true"
         PUSH_IMAGE: "true"
         TAG_SUFFIX: ""
-        TAG_LATEST: "false"
+        TAG_LATEST: "true"
         DEBUG_REASON: "tag pipeline"
 
     # Feature branches (dash)
