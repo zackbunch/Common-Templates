@@ -8,7 +8,7 @@ include:
 
   - template: Security/Container-Scanning.gitlab-ci.yml
 
-stages: [build, scan, deploy, release]
+stages: [build, test, scan, deploy, release]
 
 
 
