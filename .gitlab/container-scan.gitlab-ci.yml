@@ -1,17 +1,18 @@
+stages: [scan]
+
 include:
   - template: Jobs/Container-Scanning.gitlab-ci.yml
 
-# Your wrapped job
-scan:container-scanning:
-  extends: container_scanning
-  stage: scan                      # <-- override stage from "test" to "scan"
+# Override the included job (same name), push it into the "scan" stage,
+# and keep your sound-proof guards.
+container_scanning:
+  stage: scan
   needs:
     - job: build:docker
       artifacts: true
       optional: true
   allow_failure: true
   rules: !reference [.rule:scan-when-image-exists, rules]
-
   before_script:
     - set -euo pipefail 2>/dev/null || set -eu
     - |
@@ -24,7 +25,6 @@ scan:container-scanning:
       fi
       echo "Scanning ${IMAGE_REF} ..."
       export CS_IMAGE="${IMAGE_REF}"
-
   variables:
     DOCKER_AUTH_CONFIG: >
       {"auths":{
