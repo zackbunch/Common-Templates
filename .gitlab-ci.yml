@@ -20,7 +20,7 @@ build:docker:
   stage: build
   interruptible: true
   extends: .build-common
-  rules: !reference [.rule:build-matrix, rules]
+  rules: !reference [.rule:build-simple, rules]
 
 scan:container:
   stage: scan

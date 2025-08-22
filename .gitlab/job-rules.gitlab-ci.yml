@@ -214,12 +214,20 @@
     - when: never
 
 
-.rule:build-matrix:
+# -------------------------------------------------------------------
+# Simple build matrix:
+# - Tags: push as release (no suffix)
+# - MRs: push, suffix = branch slug
+# - Env branches: push, suffix per env
+# - Feature pushes: push only if PUSH_ON_FEATURE=true, suffix = branch slug
+# -------------------------------------------------------------------
+.rule:build-simple:
   rules:
+    # Skip schedules
     - if: '$CI_PIPELINE_SOURCE == "schedule"'
       when: never
 
-    # Tags release push
+    # Tags → release push
     - if: '$CI_COMMIT_TAG'
       variables:
         RELEASE_IMAGE: "true"
@@ -228,51 +236,42 @@
         TAG_LATEST: "true"
         DEBUG_REASON: "tag pipeline"
 
-    # Feature branches
-    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_TAG == null && $CI_COMMIT_BRANCH =~ /^gmarm-/'
+    # MR pipelines → always push, suffix = slug
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
       variables:
-        PUSH_IMAGE: "$PUSH_ON_FEATURE"
-        TAG_SUFFIX: "$FEATURE_TAG_SUFFIX"
-        DEBUG_REASON: "feature push (gmarm-)"
+        PUSH_IMAGE: "true"
+        TAG_SUFFIX: "$CI_COMMIT_REF_SLUG"
+        DEBUG_REASON: "mr pipeline"
 
-    # Env branches
-    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "prod"'
-      variables: { PUSH_IMAGE: "true", TAG_SUFFIX: "$PROD_TAG_SUFFIX", TAG_LATEST: "true", DEBUG_REASON: "prod push" }
-    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "int"'
-      variables: { PUSH_IMAGE: "true", TAG_SUFFIX: "$INT_TAG_SUFFIX", DEBUG_REASON: "int push" }
-    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "test"'
-      variables: { PUSH_IMAGE: "true", TAG_SUFFIX: "$TEST_TAG_SUFFIX", DEBUG_REASON: "test push" }
-    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "dev"'
-      variables: { PUSH_IMAGE: "true", TAG_SUFFIX: "$DEV_TAG_SUFFIX", DEBUG_REASON: "dev push" }
+    # Env branches → push
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH =~ /^(dev|test|int|prod)$/'
+      variables:
+        PUSH_IMAGE: "true"
+        TAG_SUFFIX: "$CI_COMMIT_BRANCH"
+        DEBUG_REASON: "env branch push"
+
+    # Other branch pushes (features) → toggle
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_TAG == null'
+      variables:
+        PUSH_IMAGE: "$PUSH_ON_FEATURE"            # default false; set true if you want
+        TAG_SUFFIX: "$CI_COMMIT_REF_SLUG"
+        DEBUG_REASON: "feature branch push"
 
     - when: never
-      variables:
-        DEBUG_REASON: "no matching build rule"
-
+      variables: { DEBUG_REASON: "no matching build rule" }
 
 # -------------------------------------------------------------------
-# Run container scan only when an image is expected to exist
-# - Tag pipelines (release)
-# - Env branches (dev/test/int/prod)
-# - Feature pipelines (gmarm- or gmarm/), but only if PUSH_ON_FEATURE=true
+# Scan whenever a build likely pushed an image
+# (tags, MRs, env branches, and feature pushes when toggle is true)
 # -------------------------------------------------------------------
 .rule:scan-when-image-exists:
   rules:
-    # Release tags → image is pushed
     - if: '$CI_COMMIT_TAG'
       when: on_success
-
-    # Env branches → image is pushed
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: on_success
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH =~ /^(dev|test|int|prod)$/'
       when: on_success
-
-    # Feature branch PUSH (toggle) → image pushed only when PUSH_ON_FEATURE=true
-    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH =~ /^gmarm-/ && $PUSH_ON_FEATURE == "true"'
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_TAG == null && $PUSH_ON_FEATURE == "true"'
       when: on_success
-
-    # Feature MR (toggle) → image pushed only when PUSH_ON_FEATURE=true
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ /^gmarm[-\/]/ && $PUSH_ON_FEATURE == "true"'
-      when: on_success
-
-    # Otherwise don’t create the job
     - when: never
