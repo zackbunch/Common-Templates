@@ -7,7 +7,7 @@
     - job: build:docker
       artifacts: true
   allow_failure: true
-  rules: !reference [.rule:scan-on-mr-to-env]
+  rules: !reference [.rule:scan-on-mr-to-env, rules]
   before_script:
     - set -euo pipefail
     - |
