@@ -7,7 +7,7 @@ include:
   - local: '.gitlab/release.gitlab-ci.yml'
 
 
-stages: [build, scan, deploy, release]
+stages: [prepare, build, scan, deploy, release]
 
 
 
