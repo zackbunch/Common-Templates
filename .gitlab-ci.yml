@@ -6,13 +6,14 @@ include:
   - local: '.gitlab/deploy.gitlab-ci.yml'
   - local: '.gitlab/release.gitlab-ci.yml'
 
+
 stages: [build, scan, deploy, release]
 
 
 
 variables:
   APP_NAME: templates
-  PUSH_ON_FEATURE: "false"
+  PUSH_ON_FEATURE: "true"
 
 
 # ---------------------------
@@ -23,3 +24,12 @@ build:docker:
   interruptible: true
   extends: .build-common
   rules: !reference [.rule:build-simple, rules]
+
+debug:dotenv:
+  stage: scan
+  needs:
+    - job: build:docker      # <<< again, MUST be the real name
+      artifacts: true
+  script:
+    - echo "Should see IMAGE_* from dotenv below:"
+    - env | sort | grep -E '^(IMAGE_|CS_IMAGE=)' || true
