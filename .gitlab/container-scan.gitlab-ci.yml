@@ -32,11 +32,13 @@ container_scanning:
   before_script:
     - set -euo pipefail 2>/dev/null || set -eu
     - |
-      # Hard gate: only run if the dotenv actually provided IMAGE_REF
       if [ -z "${IMAGE_REF:-}" ]; then
-        echo "No IMAGE_REF in environment (missing or skipped build) — skipping"; exit 0
+        echo "No IMAGE_REF in environment (build skipped or didn’t push) — skipping"; exit 0
       fi
       echo "Scanning ${IMAGE_REF} ..."
+      # (optional) quick diagnostics
+      env | sort | grep -E 'IMAGE_REF|CS_IMAGE|CI_JOB_NAME' || true
+      ls -la || true
   script:
     - gtcs scan
   artifacts:
