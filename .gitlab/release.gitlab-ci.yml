@@ -104,3 +104,11 @@ prepare_release_meta:
   artifacts:
     reports:
       dotenv: variables.env
+
+
+release:auto:
+  extends: .release-cli
+  stage: release
+  before_script:
+    - export
+
