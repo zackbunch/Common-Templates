@@ -15,6 +15,14 @@
     TAG_SUFFIX: ""
     DOCKER_CONTEXT: "."
     DOCKERFILE: "Dockerfile"
+    # image tag suffixes
+    DEV_TAG_SUFFIX:  "dev"
+    TEST_TAG_SUFFIX: "test"
+    INT_TAG_SUFFIX:  "int"
+    PROD_TAG_SUFFIX: "prod"
+    FEATURE_TAG_SUFFIX: "feat"
+    MR_TAG_SUFFIX: "mr"
+    FEATURE_PREFIX: "gmarm-"
   before_script:
     - set -euo pipefail
     - echo "Login $CI_REGISTRY as $CI_REGISTRY_USER"
