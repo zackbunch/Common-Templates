@@ -248,3 +248,31 @@
     - when: never
       variables:
         DEBUG_REASON: "no matching build rule"
+
+
+# -------------------------------------------------------------------
+# Run container scan only when an image is expected to exist
+# - Tag pipelines (release)
+# - Env branches (dev/test/int/prod)
+# - Feature pipelines (gmarm- or gmarm/), but only if PUSH_ON_FEATURE=true
+# -------------------------------------------------------------------
+.rule:scan-when-image-exists:
+  rules:
+    # Release tags → image is pushed
+    - if: '$CI_COMMIT_TAG'
+      when: on_success
+
+    # Env branches → image is pushed
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH =~ /^(dev|test|int|prod)$/'
+      when: on_success
+
+    # Feature branch PUSH (toggle) → image pushed only when PUSH_ON_FEATURE=true
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH =~ /^gmarm-/ && $PUSH_ON_FEATURE == "true"'
+      when: on_success
+
+    # Feature MR (toggle) → image pushed only when PUSH_ON_FEATURE=true
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ /^gmarm[-\/]/ && $PUSH_ON_FEATURE == "true"'
+      when: on_success
+
+    # Otherwise don’t create the job
+    - when: never

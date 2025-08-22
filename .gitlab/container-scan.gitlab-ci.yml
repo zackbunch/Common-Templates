@@ -6,7 +6,7 @@
     - job: build:docker
       artifacts: true
   allow_failure: true
-  rules: !reference [.rule:scan-on-mr-to-env, rules]
+  rules: !reference [.rule:scan-when-image-exists, rules]
 
   before_script:
     - set -euo pipefail
