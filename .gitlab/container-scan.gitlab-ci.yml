@@ -7,7 +7,7 @@ include:
 
 scan:container-scanning:
   extends: container_scanning            # <- extend GitLab’s built-in job
-  stage: scan
+  stage: test
   needs:
     - job: build:docker
       artifacts: true
