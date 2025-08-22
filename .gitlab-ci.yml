@@ -25,6 +25,8 @@ build:docker:
 scan:container:
   stage: scan
   extends: .container-scan-template
+  script:
+    - echo "Running scan"
 
 
 

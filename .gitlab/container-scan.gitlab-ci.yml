@@ -2,12 +2,12 @@
 .container-scan-template:
   stage: scan
   image: alpine:3.20
-  # Pull in build artifacts (e.g., image-digest.env from build job)
   needs:
     - job: build:docker
       artifacts: true
   allow_failure: true
   rules: !reference [.rule:scan-on-mr-to-env, rules]
+
   before_script:
     - set -euo pipefail
     - |
@@ -21,3 +21,4 @@
         exit 0
       fi
       echo "✅ Found IMAGE_REF=${IMAGE_REF}, starting scan..."
+
