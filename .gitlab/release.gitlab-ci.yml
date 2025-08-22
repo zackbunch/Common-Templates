@@ -86,12 +86,12 @@ release:create:
 prepare_release_meta:
   stage: prepare
   image: redhat/ubi9
-  rules:
-    - if: '$CI_COMMIT_TAG'
-      when: never
-    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
-      when: always
-    - when: never
+  # rules:
+  #   - if: '$CI_COMMIT_TAG'
+  #     when: never
+  #   - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+  #     when: always
+  #   - when: never
   script:
     - set -euo pipefail
     # Validate VERSION file exists and is non-empty
