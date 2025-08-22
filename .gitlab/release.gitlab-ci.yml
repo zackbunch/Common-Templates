@@ -5,6 +5,12 @@
 # 2) ensure a tag-only rules anchor exists: `.rule:tag-only`
 # 3) downstream jobs can `needs: [release:version]` to get $VERSION
 
+.release-cli: &release-cli
+  image: registry.gitlab.com/gitlab-org/release-cli:latest
+  before_script:
+    - set -euo pipefail
+    - release-cli --version
+
 release:version:
   image: alpine:3.20
   stage: release
@@ -35,10 +41,9 @@ release:version:
     when: always
     expire_in: 1 week
 
-# New release job using GitLab CLI (glab)
 release:create:
+  extends: .release-cli
   stage: release
-  image: registry.gitlab.com/gitlab-org/cli:latest
   rules: !reference [.rule:tag-only, rules]
   needs:
     - job: build:docker
@@ -47,16 +52,8 @@ release:create:
     - job: release:version
       artifacts: true
       optional: true
-  variables:
-    # Optional: space-separated paths to asset files to upload with the release
-    # Example: "dist/app-linux-amd64.tar.gz dist/app-darwin-arm64.zip"
-    ASSET_PATHS: ""
   before_script:
     - set -euo pipefail
-    # glab auth: prefer a dedicated token if provided; otherwise fall back to CI_JOB_TOKEN (works on most self-hosted GitLab instances)
-    - export GITLAB_TOKEN="${GITLAB_TOKEN:-${GLAB_TOKEN:-${CI_JOB_TOKEN:-}}}"
-    - export GLAB_HOST="${GLAB_HOST:-${CI_SERVER_HOST:-}}"
-    - glab --version
     - NOTES=RELEASE_NOTES.md
     - IMAGE="(not available)"
     - VERSION_STR="${CI_COMMIT_TAG:-unknown}"
@@ -74,22 +71,8 @@ release:create:
         echo "\`${IMAGE}\`"
       } > "${NOTES}"
   script:
-    - |
-      set -euo pipefail
-      set -- "${CI_COMMIT_TAG}" \
-        --name "Release ${VERSION_STR}" \
-        --notes-file "${NOTES}"
+    - release-cli create
+        --name "Release ${CI_COMMIT_TAG}"
+        --tag-name "${CI_COMMIT_TAG}"
+        --description "$(cat "${NOTES}")"
 
-      # Optional assets (space-separated in ASSET_PATHS)
-      if [ -n "${ASSET_PATHS}" ]; then
-        for f in ${ASSET_PATHS}; do
-          if [ -f "$f" ]; then
-            set -- "$@" --assets-link "name=$(basename "$f"),link_type=package,path=file://$PWD/$f"
-          else
-            echo "WARN: asset '$f' not found; skipping" >&2
-          fi
-        done
-      fi
-
-      echo "Running: glab release create [args elided]"
-      glab release create "$@"
