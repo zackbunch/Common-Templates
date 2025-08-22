@@ -16,31 +16,26 @@ container_scanning:
       optional: true
   allow_failure: true
   variables:
-    # The analyzer will scan exactly this immutable ref from your dotenv
-    # (set in build as: echo "IMAGE_REF=registry/path@sha256:..." > image-digest.env)
+    # 1) point the analyzer at the immutable digest injected by dotenv
     CS_IMAGE: "$IMAGE_REF"
+    CS_REGISTRY: "$CI_REGISTRY"
+    CS_REGISTRY_USER: "$CI_REGISTRY_USER"
+    CS_REGISTRY_PASSWORD: "$CI_JOB_TOKEN"
 
-    # Analyzer doesn’t need the repo checkout unless you want allowlist/Dockerfile auto-remediation
-    # If you need those, change to GIT_STRATEGY: fetch
+    # Optional tuning
     GIT_STRATEGY: none
+    # CS_SEVERITY_THRESHOLD: "critical"
+    # CS_DISABLE_LANGUAGE_VULNERABILITY_SCAN: "true"
+    # CS_TRIVY_TIMEOUT: "5m"
 
-    # Auth so the analyzer can pull private images (GitLab Registry example)
-    DOCKER_AUTH_CONFIG: >
-      {"auths":{
-        "${CI_REGISTRY}":{"username":"${CI_REGISTRY_USER}","password":"${CI_REGISTRY_PASSWORD}"}
-      }}
-
-
+  # Gate on ENV (scheduler doesn't see dotenv; do it at runtime)
   before_script:
     - set -euo pipefail 2>/dev/null || set -eu
     - |
-      if [ -z "${IMAGE_REF:-}" ]; then
-        echo "No IMAGE_REF in environment (build skipped or didn’t push) — skipping"; exit 0
+      if [ -z "${IMAGE_REF:-}" ] || [ "${IMAGE_REF}" = "skipped" ]; then
+        echo "No IMAGE_REF (build skipped or not pushed) — exit 0"; exit 0
       fi
       echo "Scanning ${IMAGE_REF} ..."
-      # (optional) quick diagnostics
-      env | sort | grep -E 'IMAGE_REF|CS_IMAGE|CI_JOB_NAME' || true
-      ls -la || true
   script:
     - gtcs scan
   artifacts:
@@ -53,28 +48,4 @@ container_scanning:
       - gl-dependency-scanning-report.json
       - "**/gl-sbom-*.cdx.json"
 
-  dependencies: []   # keep empty; we rely on needs: for artifact/env injection
 
-  rules:
-    - if: $CONTAINER_SCANNING_DISABLED == 'true' || $CONTAINER_SCANNING_DISABLED == '1'
-      when: never
-
-    # 1) MR pipeline (AST MR enabled), choose FIPS variant if needed
-    - if: $AST_ENABLE_MR_PIPELINES == "true" &&
-          $CI_PIPELINE_SOURCE == "merge_request_event" &&
-          $CI_GITLAB_FIPS_MODE == "true" &&
-          $CS_ANALYZER_IMAGE !~ /-(fips|ubi)\z/
-      variables: { CS_IMAGE_SUFFIX: -fips }
-    - if: $AST_ENABLE_MR_PIPELINES == "true" &&
-          $CI_PIPELINE_SOURCE == "merge_request_event"
-
-    # 2) Skip branch pipeline when MR pipelines are enabled and there’s an open MR
-    - if: $AST_ENABLE_MR_PIPELINES == "true" && $CI_OPEN_MERGE_REQUESTS
-      when: never
-
-    # 3) Branch pipeline (no MR or MR pipelines disabled), pick FIPS when required
-    - if: $CI_COMMIT_BRANCH &&
-          $CI_GITLAB_FIPS_MODE == "true" &&
-          $CS_ANALYZER_IMAGE !~ /-(fips|ubi)\z/
-      variables: { CS_IMAGE_SUFFIX: -fips }
-    - if: $CI_COMMIT_BRANCH
