@@ -1,21 +1,17 @@
-# You must already have:
 include:
   - template: Jobs/Container-Scanning.gitlab-ci.yml
-#
-# And your build must emit image-digest.env with:
-#   IMAGE_REF=registry.example.com/group/app@sha256:...
 
+# Your wrapped job
 scan:container-scanning:
-  extends: container_scanning            # <- extend GitLab’s built-in job
-  stage: test
+  extends: container_scanning
+  stage: scan                      # <-- override stage from "test" to "scan"
   needs:
     - job: build:docker
       artifacts: true
-      optional: true                     # tolerate pipelines where build didn’t run
+      optional: true
   allow_failure: true
-  rules: !reference [.rule:scan-when-image-exists, rules]   # reuse your “sound-proof” rules
+  rules: !reference [.rule:scan-when-image-exists, rules]
 
-  # Guard exactly like your custom scan:container
   before_script:
     - set -euo pipefail 2>/dev/null || set -eu
     - |
@@ -27,16 +23,12 @@ scan:container-scanning:
         echo "No IMAGE_REF (image not pushed) — skipping"; exit 0
       fi
       echo "Scanning ${IMAGE_REF} ..."
-      # hand the digest to GitLab’s analyzer
       export CS_IMAGE="${IMAGE_REF}"
 
   variables:
-    # Auth so the analyzer can pull from your private registry (GitLab Registry example).
     DOCKER_AUTH_CONFIG: >
       {"auths":{
         "${CI_REGISTRY}":{"username":"${CI_REGISTRY_USER}","password":"${CI_REGISTRY_PASSWORD}"}
       }}
-    # Optional tuning:
     # CS_SEVERITY_THRESHOLD: "critical"
     # CS_DISABLE_LANGUAGE_VULNERABILITY_SCAN: "true"
-    # CS_TRIVY_TIMEOUT: "5m"
