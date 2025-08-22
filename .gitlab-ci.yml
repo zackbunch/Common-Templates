@@ -6,7 +6,6 @@ include:
   - local: '.gitlab/deploy.gitlab-ci.yml'
   - local: '.gitlab/release.gitlab-ci.yml'
 
-  - template: Security/Container-Scanning.gitlab-ci.yml
 
 stages: [build, test, scan, deploy, release]
 
