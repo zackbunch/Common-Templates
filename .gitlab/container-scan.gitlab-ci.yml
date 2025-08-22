@@ -1,0 +1,22 @@
+scan:container:
+  stage: scan
+  image: alpine:3.20
+  needs:
+    - job: build:docker
+      artifacts: true
+      optional: true          # avoids “needs missing” errors when build doesn't run
+  allow_failure: true
+  rules: !reference [.rule:scan-when-image-exists, rules]
+  before_script:
+    - set -euo pipefail 2>/dev/null || set -eu
+    - |
+      if [ ! -f image-digest.env ]; then
+        echo "No image-digest.env — skipping"; exit 0
+      fi
+      . image-digest.env
+      if [ -z "${IMAGE_REF:-}" ] || [ "${IMAGE_REF}" = "skipped" ]; then
+        echo "No IMAGE_REF (image not pushed) — skipping"; exit 0
+      fi
+      echo "Scanning ${IMAGE_REF} ..."
+  script:
+    - echo "grype \"${IMAGE_REF}\" --fail-on \"${SCAN_SEVERITY:-High,Critical}\" --only-fixed"

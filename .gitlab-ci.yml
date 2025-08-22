@@ -1,15 +1,18 @@
 include:
   - local: '.gitlab/job-rules.gitlab-ci.yml'
   - local: '.gitlab/secrets.gitlab-ci.yml'
+  - local: '.gitlab/container-scan.gitlab-ci.yml'
   - local: '.gitlab/docker.gitlab-ci.yml'
   - local: '.gitlab/deploy.gitlab-ci.yml'
   - local: '.gitlab/release.gitlab-ci.yml'
 
 stages: [build, scan, deploy, release]
 
+
+
 variables:
   APP_NAME: templates
-  PUSH_ON_FEATURE: "true"
+  PUSH_ON_FEATURE: "false"
 
 
 # ---------------------------
@@ -19,10 +22,4 @@ build:docker:
   stage: build
   interruptible: true
   extends: .build-common
-  rules: !reference [.rule:build-matrix, rules]
-
-
-
-
-
-
+  rules: !reference [.rule:build-simple, rules]
