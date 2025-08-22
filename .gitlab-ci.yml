@@ -11,8 +11,6 @@ stages: [build, scan, deploy, release]
 variables:
   APP_NAME: templates
   PUSH_ON_FEATURE: "false"        # features will push; flip to "false" to disable
-  SCAN_SEVERITY: "High,Critical" # default for container scan (can override per job)
-
 
 
 # ---------------------------
