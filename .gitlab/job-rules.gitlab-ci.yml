@@ -214,14 +214,12 @@
     - when: never
 
 
-
-# .gitlab/job-rules.gitlab-ci.yml
 .rule:build-matrix:
   rules:
     - if: '$CI_PIPELINE_SOURCE == "schedule"'
       when: never
 
-    # Tags → release push
+    # Tags release push
     - if: '$CI_COMMIT_TAG'
       variables:
         RELEASE_IMAGE: "true"
@@ -230,19 +228,12 @@
         TAG_LATEST: "true"
         DEBUG_REASON: "tag pipeline"
 
-    # Feature branches (dash)
+    # Feature branches
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_TAG == null && $CI_COMMIT_BRANCH =~ /^gmarm-/'
       variables:
         PUSH_IMAGE: "$PUSH_ON_FEATURE"
         TAG_SUFFIX: "$FEATURE_TAG_SUFFIX"
         DEBUG_REASON: "feature push (gmarm-)"
-
-    # Feature branches (slash)
-    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_TAG == null && $CI_COMMIT_BRANCH =~ /^gmarm\//'
-      variables:
-        PUSH_IMAGE: "$PUSH_ON_FEATURE"
-        TAG_SUFFIX: "$FEATURE_TAG_SUFFIX"
-        DEBUG_REASON: "feature push (gmarm/)"
 
     # Env branches
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "prod"'
