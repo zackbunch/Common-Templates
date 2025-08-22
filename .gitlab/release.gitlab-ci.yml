@@ -106,9 +106,5 @@ prepare_release_meta:
       dotenv: variables.env
 
 
-release:auto:
-  extends: .release-cli
-  stage: release
-  before_script:
-    - export
+
 
