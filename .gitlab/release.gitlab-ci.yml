@@ -76,22 +76,20 @@ release:create:
   script:
     - |
       set -euo pipefail
-      CREATE_ARGS=(
-        "${CI_COMMIT_TAG}"
-        --name "Release ${VERSION_STR}"
+      set -- "${CI_COMMIT_TAG}" \
+        --name "Release ${VERSION_STR}" \
         --notes-file "${NOTES}"
-      )
 
-      # Attach assets if provided (space-separated)
+      # Optional assets (space-separated in ASSET_PATHS)
       if [ -n "${ASSET_PATHS}" ]; then
         for f in ${ASSET_PATHS}; do
           if [ -f "$f" ]; then
-            CREATE_ARGS+=( --assets-link "name=$(basename "$f"),link_type=package,path=file://$PWD/$f" )
+            set -- "$@" --assets-link "name=$(basename "$f"),link_type=package,path=file://$PWD/$f"
           else
             echo "WARN: asset '$f' not found; skipping" >&2
           fi
         done
       fi
 
-      # Create the release with glab
-      glab release create "${CREATE_ARGS[@]}"
+      echo "Running: glab release create [args elided]"
+      glab release create "$@"
