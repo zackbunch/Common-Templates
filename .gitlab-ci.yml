@@ -10,27 +10,10 @@ stages: [build, scan, deploy, release]
 
 variables:
   APP_NAME: templates
-  PUSH_ON_FEATURE: "true"
+  PUSH_ON_FEATURE: "false"        # features will push; flip to "false" to disable
+  SCAN_SEVERITY: "High,Critical" # default for container scan (can override per job)
 
-workflow:
-  rules:
-    # If a branch already has an open MR, skip the push pipeline and keep the MR pipeline
-    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS'
-      when: never
 
-    # Always run on tags (releases)
-    - if: '$CI_COMMIT_TAG'
-      when: always
-
-    # Run on MR pipelines
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
-      when: always
-
-    # Run on regular branch pushes (when no open MR)
-    - if: '$CI_PIPELINE_SOURCE == "push"'
-      when: always
-
-    - when: never
 
 # ---------------------------
 # Build

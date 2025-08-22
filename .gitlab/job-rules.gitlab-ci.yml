@@ -1,17 +1,26 @@
 # .gitlab/job-rules.gitlab-ci.yml
 #
-# Reusable job rules — each block is a hidden job that can be referenced
-# with:
+# Reusable job rules — each block is a hidden job that can be referenced with:
 #   rules: !reference [.rule:name-here, rules]
 #
 # NOTES:
 # - "First match wins": GitLab evaluates rules top-to-bottom and stops on the first match.
 # - Always end with an explicit `- when: never` to deny all non-matching cases.
-# - Use these to avoid copy/pasting complex `if:` conditions across jobs.
 
 # -------------------------------------------------------------------
-# Example: run scans only when an MR targets dev/test/int/main/master
-#   rules: !reference [.rule:scan-on-mr-to-env, rules]
+# Workflow de-dupe: skip push pipeline if an MR already exists.
+# Reference from root with:  workflow: !reference [.workflow:dedupe]
+# -------------------------------------------------------------------
+.workflow:dedupe:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS'
+      when: never
+    - if: '$CI_COMMIT_TAG || $CI_PIPELINE_SOURCE == "merge_request_event" || $CI_PIPELINE_SOURCE == "push"'
+      when: always
+    - when: never
+
+# -------------------------------------------------------------------
+# Example: run scans only when an MR targets dev/test/int/prod/main/master
 # -------------------------------------------------------------------
 .rule:scan-on-mr-to-env:
   rules:
@@ -19,9 +28,6 @@
       when: on_success
     - when: never
 
-# -------------------------------------------------------------------
-# Example: add a manual “Play” button for non-MR pipelines only
-#   rules: !reference [.rule:scan-manual-non-mr, rules]
 # -------------------------------------------------------------------
 .rule:scan-manual-non-mr:
   rules:
@@ -31,18 +37,12 @@
       allow_failure: true
 
 # -------------------------------------------------------------------
-# Example: run job on push pipelines or MR pipelines
-#   rules: !reference [.rule:push-or-mr, rules]
-# -------------------------------------------------------------------
 .rule:push-or-mr:
   rules:
     - if: '$CI_PIPELINE_SOURCE == "push" || $CI_PIPELINE_SOURCE == "merge_request_event"'
       when: on_success
     - when: never
 
-# -------------------------------------------------------------------
-# Example: run job only on direct branch pushes (no MRs, no tags)
-#   rules: !reference [.rule:push-branches-only, rules]
 # -------------------------------------------------------------------
 .rule:push-branches-only:
   rules:
@@ -51,18 +51,12 @@
     - when: never
 
 # -------------------------------------------------------------------
-# Example: run job only when a tag is pushed
-#   rules: !reference [.rule:tag-only, rules]
-# -------------------------------------------------------------------
 .rule:tag-only:
   rules:
     - if: '$CI_COMMIT_TAG'
       when: on_success
     - when: never
 
-# -------------------------------------------------------------------
-# Example: run job only in merge request pipelines
-#   rules: !reference [.rule:mr-only, rules]
 # -------------------------------------------------------------------
 .rule:mr-only:
   rules:
@@ -71,17 +65,11 @@
     - when: never
 
 # -------------------------------------------------------------------
-# Example: show a manual button everywhere, required if clicked
-#   rules: !reference [.rule:manual-anywhere, rules]
-# -------------------------------------------------------------------
 .rule:manual-anywhere:
   rules:
     - when: manual
       allow_failure: false
 
-# -------------------------------------------------------------------
-# Example: run only on default branch (e.g. “main”)
-#   rules: !reference [.rule:default-branch-only, rules]
 # -------------------------------------------------------------------
 .rule:default-branch-only:
   rules:
@@ -90,18 +78,12 @@
     - when: never
 
 # -------------------------------------------------------------------
-# Example: run only on protected branches
-#   rules: !reference [.rule:protected-branches-only, rules]
-# -------------------------------------------------------------------
 .rule:protected-branches-only:
   rules:
     - if: '$CI_COMMIT_BRANCH && $CI_COMMIT_REF_PROTECTED == "true"'
       when: on_success
     - when: never
 
-# -------------------------------------------------------------------
-# Example: run only on protected tags
-#   rules: !reference [.rule:protected-tags-only, rules]
 # -------------------------------------------------------------------
 .rule:protected-tags-only:
   rules:
@@ -110,18 +92,12 @@
     - when: never
 
 # -------------------------------------------------------------------
-# Example: run only when branch is dev/test/int/main/master
-#   rules: !reference [.rule:env-branches-only, rules]
-# -------------------------------------------------------------------
 .rule:env-branches-only:
   rules:
     - if: '$CI_COMMIT_BRANCH =~ /^(dev|test|int|main|master)$/'
       when: on_success
     - when: never
 
-# -------------------------------------------------------------------
-# Example: run only on scheduled pipelines
-#   rules: !reference [.rule:schedule-only, rules]
 # -------------------------------------------------------------------
 .rule:schedule-only:
   rules:
@@ -130,18 +106,12 @@
     - when: never
 
 # -------------------------------------------------------------------
-# Example: run only when triggered via Web UI or API
-#   rules: !reference [.rule:web-or-api-only, rules]
-# -------------------------------------------------------------------
 .rule:web-or-api-only:
   rules:
     - if: '$CI_PIPELINE_SOURCE == "web" || $CI_PIPELINE_SOURCE == "api"'
       when: on_success
     - when: never
 
-# -------------------------------------------------------------------
-# Example: run only on RC tags (e.g. 1.2.3-rc.1)
-#   rules: !reference [.rule:rc-tags-only, rules]
 # -------------------------------------------------------------------
 .rule:rc-tags-only:
   rules:
@@ -150,9 +120,6 @@
     - when: never
 
 # -------------------------------------------------------------------
-# Example: run in MR pipelines only if the MR has “security-scan” label
-#   rules: !reference [.rule:mr-with-label-security-scan, rules]
-# -------------------------------------------------------------------
 .rule:mr-with-label-security-scan:
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_LABELS =~ /(^|, )security-scan(,|$)/'
@@ -160,18 +127,12 @@
     - when: never
 
 # -------------------------------------------------------------------
-# Example: skip job entirely if MR title starts with Draft: or WIP:
-#   rules: !reference [.rule:skip-draft-mr, rules]
-# -------------------------------------------------------------------
 .rule:skip-draft-mr:
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TITLE =~ /^(Draft|WIP):/i'
       when: never
     - when: on_success
 
-# -------------------------------------------------------------------
-# Example: run only if files under src/ or cmd/ changed
-#   rules: !reference [.rule:changes-only-src, rules]
 # -------------------------------------------------------------------
 .rule:changes-only-src:
   rules:
@@ -182,9 +143,6 @@
     - when: never
 
 # -------------------------------------------------------------------
-# Example: skip job if only docs or Markdown files changed
-#   rules: !reference [.rule:skip-docs-only, rules]
-# -------------------------------------------------------------------
 .rule:skip-docs-only:
   rules:
     - changes:
@@ -194,9 +152,6 @@
     - when: on_success
 
 # -------------------------------------------------------------------
-# Example: run only on MRs coming from forks
-#   rules: !reference [.rule:mr-from-fork-only, rules]
-# -------------------------------------------------------------------
 .rule:mr-from-fork-only:
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH != $CI_PROJECT_PATH'
@@ -204,26 +159,21 @@
     - when: never
 
 # -------------------------------------------------------------------
-# Example: run only on MRs coming from the same project
-#   rules: !reference [.rule:mr-same-project-only, rules]
-# -------------------------------------------------------------------
 .rule:mr-same-project-only:
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH == $CI_PROJECT_PATH'
       when: on_success
     - when: never
 
-
 # -------------------------------------------------------------------
-# Simple build matrix:
-# - Tags: push as release (no suffix)
-# - MRs: push, suffix = branch slug
-# - Env branches: push, suffix per env
-# - Feature pushes: push only if PUSH_ON_FEATURE=true, suffix = branch slug
+# Simple build matrix matching your cadence:
+# - Tags: push as release (also :latest)
+# - dev branch: push (suffix=dev)
+# - MR pipelines: build but DO NOT push (keeps registry clean)
+# - Feature pushes: optional push via PUSH_ON_FEATURE (suffix=branch slug)
 # -------------------------------------------------------------------
 .rule:build-simple:
   rules:
-    # Skip schedules
     - if: '$CI_PIPELINE_SOURCE == "schedule"'
       when: never
 
@@ -236,24 +186,24 @@
         TAG_LATEST: "true"
         DEBUG_REASON: "tag pipeline"
 
-    # MR pipelines → always push, suffix = slug
+    # MR pipelines → build only (no push)
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
       variables:
-        PUSH_IMAGE: "true"
+        PUSH_IMAGE: "false"
         TAG_SUFFIX: "$CI_COMMIT_REF_SLUG"
-        DEBUG_REASON: "mr pipeline"
+        DEBUG_REASON: "mr pipeline (no push)"
 
-    # Env branches → push
-    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH =~ /^(dev|test|int|prod)$/'
+    # dev branch → push
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "dev"'
       variables:
         PUSH_IMAGE: "true"
-        TAG_SUFFIX: "$CI_COMMIT_BRANCH"
-        DEBUG_REASON: "env branch push"
+        TAG_SUFFIX: "dev"
+        DEBUG_REASON: "dev branch push"
 
-    # Other branch pushes (features) → toggle
+    # Other branch pushes (features) → toggle push
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_TAG == null'
       variables:
-        PUSH_IMAGE: "$PUSH_ON_FEATURE"            # default false; set true if you want
+        PUSH_IMAGE: "$PUSH_ON_FEATURE"
         TAG_SUFFIX: "$CI_COMMIT_REF_SLUG"
         DEBUG_REASON: "feature branch push"
 
@@ -261,8 +211,18 @@
       variables: { DEBUG_REASON: "no matching build rule" }
 
 # -------------------------------------------------------------------
-# Scan whenever a build likely pushed an image
-# (tags, MRs, env branches, and feature pushes when toggle is true)
+# Scans should run on dev merges and on release tags (your cadence)
+# -------------------------------------------------------------------
+.rule:scan-dev-or-tag:
+  rules:
+    - if: '$CI_COMMIT_TAG'                                  # release
+      when: on_success
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "dev"'  # post-merge to dev
+      when: on_success
+    - when: never
+
+# -------------------------------------------------------------------
+# (Optional) broader scan trigger when an image likely exists
 # -------------------------------------------------------------------
 .rule:scan-when-image-exists:
   rules:
