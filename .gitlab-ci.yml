@@ -1,6 +1,7 @@
 include:
   - local: '.gitlab/job-rules.gitlab-ci.yml'
   - local: '.gitlab/secrets.gitlab-ci.yml'
+  - local: '.gitlab/container-scan.gitlab-ci.yml'
   - local: '.gitlab/docker.gitlab-ci.yml'
   - local: '.gitlab/deploy.gitlab-ci.yml'
   - local: '.gitlab/release.gitlab-ci.yml'
@@ -24,7 +25,7 @@ build:docker:
 scan:container:
   stage: scan
   extends: .container-scan-template
-  
+
 
 
 
