@@ -1,34 +1,76 @@
-stages: [scan]
+# ----------------------------
+# Container Scanning (digest-aware, dotenv-driven)
+# ----------------------------
 
-include:
-  - template: Jobs/Container-Scanning.gitlab-ci.yml
+variables:
+  CS_ANALYZER_IMAGE: "$CI_TEMPLATE_REGISTRY_HOST/security-products/container-scanning:8"
+  CS_SCHEMA_MODEL: 15
 
-# Override the included job (same name), push it into the "scan" stage,
-# and keep your sound-proof guards.
 container_scanning:
+  image: "$CS_ANALYZER_IMAGE$CS_IMAGE_SUFFIX"
   stage: scan
+  # Pull the dotenv from your build job; tolerate pipelines where build didn't run
   needs:
     - job: build:docker
       artifacts: true
       optional: true
   allow_failure: true
-  rules: !reference [.rule:scan-when-image-exists, rules]
-  before_script:
-    - set -euo pipefail 2>/dev/null || set -eu
-    - |
-      if [ ! -f image-digest.env ]; then
-        echo "No image-digest.env — skipping"; exit 0
-      fi
-      . image-digest.env
-      if [ -z "${IMAGE_REF:-}" ] || [ "${IMAGE_REF}" = "skipped" ]; then
-        echo "No IMAGE_REF (image not pushed) — skipping"; exit 0
-      fi
-      echo "Scanning ${IMAGE_REF} ..."
-      export CS_IMAGE="${IMAGE_REF}"
   variables:
+    # The analyzer will scan exactly this immutable ref from your dotenv
+    # (set in build as: echo "IMAGE_REF=registry/path@sha256:..." > image-digest.env)
+    CS_IMAGE: "$IMAGE_REF"
+
+    # Analyzer doesn’t need the repo checkout unless you want allowlist/Dockerfile auto-remediation
+    # If you need those, change to GIT_STRATEGY: fetch
+    GIT_STRATEGY: none
+
+    # Auth so the analyzer can pull private images (GitLab Registry example)
     DOCKER_AUTH_CONFIG: >
       {"auths":{
         "${CI_REGISTRY}":{"username":"${CI_REGISTRY_USER}","password":"${CI_REGISTRY_PASSWORD}"}
       }}
-    # CS_SEVERITY_THRESHOLD: "critical"
-    # CS_DISABLE_LANGUAGE_VULNERABILITY_SCAN: "true"
+  before_script:
+    - set -euo pipefail 2>/dev/null || set -eu
+    - |
+      # Hard gate: only run if the dotenv actually provided IMAGE_REF
+      if [ -z "${IMAGE_REF:-}" ]; then
+        echo "No IMAGE_REF in environment (missing or skipped build) — skipping"; exit 0
+      fi
+      echo "Scanning ${IMAGE_REF} ..."
+  script:
+    - gtcs scan
+  artifacts:
+    access: 'developer'
+    reports:
+      container_scanning: gl-container-scanning-report.json
+      cyclonedx: "**/gl-sbom-*.cdx.json"
+    paths:
+      - gl-container-scanning-report.json
+      - gl-dependency-scanning-report.json
+      - "**/gl-sbom-*.cdx.json"
+
+  dependencies: []   # keep empty; we rely on needs: for artifact/env injection
+
+  rules:
+    - if: $CONTAINER_SCANNING_DISABLED == 'true' || $CONTAINER_SCANNING_DISABLED == '1'
+      when: never
+
+    # 1) MR pipeline (AST MR enabled), choose FIPS variant if needed
+    - if: $AST_ENABLE_MR_PIPELINES == "true" &&
+          $CI_PIPELINE_SOURCE == "merge_request_event" &&
+          $CI_GITLAB_FIPS_MODE == "true" &&
+          $CS_ANALYZER_IMAGE !~ /-(fips|ubi)\z/
+      variables: { CS_IMAGE_SUFFIX: -fips }
+    - if: $AST_ENABLE_MR_PIPELINES == "true" &&
+          $CI_PIPELINE_SOURCE == "merge_request_event"
+
+    # 2) Skip branch pipeline when MR pipelines are enabled and there’s an open MR
+    - if: $AST_ENABLE_MR_PIPELINES == "true" && $CI_OPEN_MERGE_REQUESTS
+      when: never
+
+    # 3) Branch pipeline (no MR or MR pipelines disabled), pick FIPS when required
+    - if: $CI_COMMIT_BRANCH &&
+          $CI_GITLAB_FIPS_MODE == "true" &&
+          $CS_ANALYZER_IMAGE !~ /-(fips|ubi)\z/
+      variables: { CS_IMAGE_SUFFIX: -fips }
+    - if: $CI_COMMIT_BRANCH
