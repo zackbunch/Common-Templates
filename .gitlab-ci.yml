@@ -8,6 +8,18 @@ include:
 
 stages: [build, scan, deploy, release]
 
+# -------------------------------------------------------------------
+# Workflow de-dupe: skip push pipeline if an MR already exists.
+
+# -------------------------------------------------------------------
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS'
+      when: never
+    - if: '$CI_COMMIT_TAG || $CI_PIPELINE_SOURCE == "merge_request_event" || $CI_PIPELINE_SOURCE == "push"'
+      when: always
+    - when: never
+
 variables:
   APP_NAME: templates
   PUSH_ON_FEATURE: "false"        # features will push; flip to "false" to disable

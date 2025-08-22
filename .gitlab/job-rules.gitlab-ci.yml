@@ -7,17 +7,7 @@
 # - "First match wins": GitLab evaluates rules top-to-bottom and stops on the first match.
 # - Always end with an explicit `- when: never` to deny all non-matching cases.
 
-# -------------------------------------------------------------------
-# Workflow de-dupe: skip push pipeline if an MR already exists.
 
-# -------------------------------------------------------------------
-workflow:
-  rules:
-    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS'
-      when: never
-    - if: '$CI_COMMIT_TAG || $CI_PIPELINE_SOURCE == "merge_request_event" || $CI_PIPELINE_SOURCE == "push"'
-      when: always
-    - when: never
 
 # -------------------------------------------------------------------
 # Example: run scans only when an MR targets dev/test/int/prod/main/master
