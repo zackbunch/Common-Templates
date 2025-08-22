@@ -14,7 +14,7 @@ stages: [build, test, scan, deploy, release]
 
 variables:
   APP_NAME: templates
-  PUSH_ON_FEATURE: "false"
+  PUSH_ON_FEATURE: "true"
 
 
 # ---------------------------
