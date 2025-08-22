@@ -25,11 +25,4 @@ build:docker:
   extends: .build-common
   rules: !reference [.rule:build-simple, rules]
 
-debug:dotenv:
-  stage: scan
-  needs:
-    - job: build:docker      # <<< again, MUST be the real name
-      artifacts: true
-  script:
-    - echo "Should see IMAGE_* from dotenv below:"
-    - env | sort | grep -E '^(IMAGE_|CS_IMAGE=)' || true
+

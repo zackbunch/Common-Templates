@@ -6,7 +6,7 @@ variables:
   CS_ANALYZER_IMAGE: "$CI_TEMPLATE_REGISTRY_HOST/security-products/container-scanning:8"
   CS_SCHEMA_MODEL: 15
 
-container_scanning:
+scan:container:
   image: "$CS_ANALYZER_IMAGE$CS_IMAGE_SUFFIX"
   stage: scan
   # Pull the dotenv from your build job; tolerate pipelines where build didn't run
@@ -38,6 +38,7 @@ container_scanning:
       echo "Scanning ${IMAGE_REF} ..."
   script:
     - gtcs scan
+  rules: !reference [.rule:scan-on-mr-to-env, rules]
   artifacts:
     access: 'developer'
     reports:
@@ -47,5 +48,6 @@ container_scanning:
       - gl-container-scanning-report.json
       - gl-dependency-scanning-report.json
       - "**/gl-sbom-*.cdx.json"
+
 
 
