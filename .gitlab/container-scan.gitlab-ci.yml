@@ -1,6 +1,21 @@
 # ----------------------------
 # Container Scanning (digest-aware, dotenv-driven)
 # ----------------------------
+#
+# This pipeline template provides a security-focused container scanning workflow for GitLab CI/CD.
+# Key features:
+#   - Digest-aware scanning (uses precise image digests for accurate vulnerability detection)
+#   - dotenv-driven configuration (pulls environment variables from .env files)
+#   - Integrates with GitLab's security scanning tools (Container Scanning, SBOM)
+#   - Optional dependency on build jobs (supports scanning without full build pipeline)
+#   - Configurable severity thresholds and scan rules
+#
+# Usage:
+# 1. Place this template in your .gitlab-ci.yml file
+# 2. Ensure your build job (e.g., build:docker) produces an IMAGE_REF variable
+# 3. Configure security scanners and credentials in your .env file
+# 4. Customize scan rules and thresholds as needed
+
 
 variables:
   CS_ANALYZER_IMAGE: "$CI_TEMPLATE_REGISTRY_HOST/security-products/container-scanning:8"
