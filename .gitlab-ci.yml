@@ -22,11 +22,6 @@ build:docker:
   extends: .build-common
   rules: !reference [.rule:build-simple, rules]
 
-scan:container:
-  stage: scan
-  extends: .container-scan-template
-  script:
-    - echo "Running scan"
 
 
 
