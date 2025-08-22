@@ -29,6 +29,8 @@ container_scanning:
       {"auths":{
         "${CI_REGISTRY}":{"username":"${CI_REGISTRY_USER}","password":"${CI_REGISTRY_PASSWORD}"}
       }}
+
+
   before_script:
     - set -euo pipefail 2>/dev/null || set -eu
     - |
