@@ -21,7 +21,10 @@ build:docker:
   extends: .build-common
   rules: !reference [.rule:build-matrix, rules]
 
-
+scan:container:
+  stage: scan
+  extends: .container-scan-template
+  
 
 
 
