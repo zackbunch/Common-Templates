@@ -7,7 +7,7 @@ include:
   - local: '.gitlab/release.gitlab-ci.yml'
 
 
-stages: [prepare, build, scan, deploy, release]
+stages: [debug, build, scan, deploy, release]
 
 
 
@@ -15,6 +15,13 @@ variables:
   APP_NAME: templates
   PUSH_ON_FEATURE: "false"
 
+
+debug:environment:
+  stage: debug
+  image: alpine:3.20
+  script:
+    - echo "Dumping all CI_ environment variables..."
+    - printenv | grep '^CI_' | sort
 
 # ---------------------------
 # Build
