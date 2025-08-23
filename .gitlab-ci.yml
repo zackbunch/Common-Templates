@@ -21,7 +21,7 @@ debug:environment:
   image: alpine:3.20
   script:
     - echo "Dumping all CI_ environment variables..."
-    - printenv | grep '^CI_' | sort
+    - printenv | sort
 
 # ---------------------------
 # Build
