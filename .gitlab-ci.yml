@@ -13,7 +13,7 @@ stages: [debug, build, scan, deploy, release]
 
 variables:
   APP_NAME: templates
-  # PUSH_ON_FEATURE: "false"
+  PUSH_ON_FEATURE: true
 
 
 # debug:environment:
