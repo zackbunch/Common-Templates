@@ -16,12 +16,12 @@ variables:
   PUSH_ON_FEATURE: "false"
 
 
-debug:environment:
-  stage: debug
-  image: alpine:3.20
-  script:
-    - echo "Dumping all CI_ environment variables..."
-    - printenv | sort
+# debug:environment:
+#   stage: debug
+#   image: alpine:3.20
+#   script:
+#     - echo "Dumping all CI_ environment variables..."
+#     - printenv | sort
 
 
 
