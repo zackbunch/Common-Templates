@@ -31,7 +31,7 @@ debug:environment:
 build:docker:
   stage: build
   interruptible: true
-  extends: .build-common
+  extends: .build_image_template
   rules: !reference [.rule:build-simple, rules]
 
 
