@@ -13,7 +13,7 @@ stages: [debug, build, scan, deploy, release]
 
 variables:
   APP_NAME: templates
-  PUSH_ON_FEATURE: "false"
+  # PUSH_ON_FEATURE: "false"
 
 
 # debug:environment:
@@ -31,7 +31,7 @@ variables:
 build:docker:
   stage: build
   interruptible: true
-  extends: .build-common
+  extends: build_image_template
   rules: !reference [.rule:build-simple, rules]
 
 

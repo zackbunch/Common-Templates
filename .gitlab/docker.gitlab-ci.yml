@@ -102,3 +102,46 @@
     paths: [ image-digest.env ]
     when: always
     expire_in: 1 week
+
+
+.build_image_template:
+  extends: .build-dind
+  variables:
+    # Overridables
+    APP_NAME: ""
+    DOCKER_CONTEXT: "."
+    DOCKERFILE: "Dockerfile"     # default to Dockerfile
+
+    # Push policy
+    PUSH_IMAGE: "false"          # auto-true for tags/env branches if you set AUTO_PUSH=true
+    AUTO_PUSH: "true"            # enable default push for tags/dev/test/int/prod
+    PUSH_ON_FEATURE: "false"     # allow feature branch pushes
+
+    # Suffix presets
+    FEATURE_PREFIX: "gmarm-"
+    DEV_TAG_SUFFIX: "dev"
+    TEST_TAG_SUFFIX: "test"
+    INT_TAG_SUFFIX:  "int"
+    PROD_TAG_SUFFIX: "prod"
+    FEATURE_TAG_SUFFIX: "feat"
+    MR_TAG_SUFFIX: "mr"
+
+    # Latest tag behavior
+    TAG_LATEST: "false"          # we’ll also set true for prod or tag pipelines
+
+  script:
+    - set -euo pipefail
+
+    # ---------- Normalize inputs (CI-only) ----------
+    - 'DOCKERFILE="${DOCKERFILE:-Dockerfile}"'
+    - 'DOCKER_CONTEXT="${DOCKER_CONTEXT:-.}"'
+    - 'SRC_BRANCH="${CI_MERGE_REQUEST_SOURCE_BRANCH_NAME:-${CI_COMMIT_BRANCH:-}}"'  # MR-safe
+
+    # ---------- Repo path ----------
+    - |
+      if [[ -n "${APP_NAME:-}" ]]; then
+        APP_NAME="$(printf '%s' "${APP_NAME}" | tr '[:upper:] ' '[:lower:]-' | tr -cd 'a-z0-9._-')"
+        [[ -n "${APP_NAME}" ]] || { echo "bad APP_NAME"; exit 1; }
+      fi
+      IMAGE_REPO="${CI_REGISTRY_IMAGE}${APP_NAME:+/${APP_NAME}}"
+
