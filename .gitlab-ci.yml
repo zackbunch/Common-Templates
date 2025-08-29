@@ -1,39 +1,31 @@
-include:
-  - local: '.gitlab/job-rules.gitlab-ci.yml'
-  - local: '.gitlab/secrets.gitlab-ci.yml'
-  - local: '.gitlab/container-scan.gitlab-ci.yml'
-  - local: '.gitlab/docker.gitlab-ci.yml'
-  - local: '.gitlab/deploy.gitlab-ci.yml'
-  - local: '.gitlab/release.gitlab-ci.yml'
-
-
-stages: [debug, build, scan, deploy, release]
 
 
 
 variables:
-  APP_NAME: templates
+  APP_NAME: syac-test
+  PUSH_ON_FEATURE: "true"
+  # Tell syac the app name (fallback is last segment of CI_REGISTRY_IMAGE)
+  SYAC_APPLICATION_NAME: "$APP_NAME"
+  # Gate feature-branch pushes (syac reads PUSH_FEATURE)
+  PUSH_FEATURE: "$PUSH_ON_FEATURE"
+  SYAC_LATEST_ON_FEATURE: "true"
 
 
-
-# debug:environment:
-#   stage: debug
-#   image: alpine:3.20
-#   script:
-#     - echo "Dumping all CI_ environment variables..."
-#     - printenv | sort
+stages:
+  - build
 
 
-
-# ---------------------------
-# Build
-# ---------------------------
-build:docker:
-  variables:
-    PUSH_ON_FEATURE: "true"
+syac:build:
   stage: build
-  interruptible: true
-  extends: .build_image_template
-  rules: !reference [.rule:build-simple, rules]
-
-
+  image: registry.simulogix.com/personal-websites/syac-3.0/syac:latest
+  services:
+    - name: docker:24-dind
+      command: ["--mtu=1460"]
+  script:
+    - mkdir -p artifacts
+    - ./syac
+  artifacts:
+    when: always
+    paths:
+      - artifacts/syac.env
+    expire_in: 1 week
