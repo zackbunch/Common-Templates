@@ -1,36 +1,31 @@
+# .gitlab-ci.yml
 
-
-
-variables:
-  APP_NAME: syac-test
-  PUSH_ON_FEATURE: "true"
-  # Tell syac the app name (fallback is last segment of CI_REGISTRY_IMAGE)
-  SYAC_APPLICATION_NAME: "$APP_NAME"
-  # Gate feature-branch pushes (syac reads PUSH_FEATURE)
-  PUSH_FEATURE: "$PUSH_ON_FEATURE"
-  SYAC_LATEST_ON_FEATURE: "true"
-
+include:
+  - local: /.gitlab/docker.gitlab-ci.yml
+  - local: /.gitlab/job-rules.gitlab-ci.yml
+  - local: /.gitlab/container-scan.gitlab-ci.yml
 
 stages:
   - build
+  - scan
 
-
-syac:build:
+# This is the main build job for your container.
+# It uses the .build_image_template for the logic
+# and .rule:build-simple for the rules.
+build:docker:
   stage: build
-  image: registry.simulogix.com/personal-websites/syac-3.0/syac:latest
-  services:
-    - name: docker:24-dind
-      command: ["--mtu=1460"]
+  extends: .build_image_template
+  # You can set container-specific variables here
+  variables:
+    APP_NAME: "my-awesome-app" # Change this for each of your 60+ containers
+    # PUSH_ON_FEATURE: "true" # Uncomment to push images for feature branches
+  rules: !reference [.rule:build-simple, rules]
 
-  before_script:
-  - set -euo pipefail
-  - echo "Login $CI_REGISTRY as $CI_REGISTRY_USER"
-  - docker login -u "$CI_REGISTRY_USER" -p "$CI_JOB_TOKEN" "$CI_REGISTRY"
-  script:
-    - mkdir -p artifacts
-    - ./syac
-  artifacts:
-    when: always
-    paths:
-      - artifacts/syac.env
-    expire_in: 1 week
+# The scan:container job is included from container-scan.gitlab-ci.yml.
+# It will automatically run after build:docker on merge requests,
+# as defined by the .rule:scan-on-mr-to-env rule.
+#
+# If you wanted to scan on every merge request, you could override the rule like this:
+#
+# scan:container:
+#   rules: !reference [.rule:mr-only, rules]
