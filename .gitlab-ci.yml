@@ -1,39 +1,27 @@
+# .gitlab-ci.yml
+
 include:
-  - local: '.gitlab/job-rules.gitlab-ci.yml'
-  - local: '.gitlab/secrets.gitlab-ci.yml'
-  - local: '.gitlab/container-scan.gitlab-ci.yml'
-  - local: '.gitlab/docker.gitlab-ci.yml'
-  - local: '.gitlab/deploy.gitlab-ci.yml'
-  - local: '.gitlab/release.gitlab-ci.yml'
+  - local: /.gitlab/docker.gitlab-ci.yml
+  - local: /.gitlab/job-rules.gitlab-ci.yml
+  - local: /.gitlab/container-scan.gitlab-ci.yml
 
+stages:
+  - build
+  - scan
 
-stages: [debug, build, scan, deploy, release]
-
-
-
-variables:
-  APP_NAME: templates
-
-
-
-# debug:environment:
-#   stage: debug
-#   image: alpine:3.20
-#   script:
-#     - echo "Dumping all CI_ environment variables..."
-#     - printenv | sort
-
-
-
-# ---------------------------
-# Build
-# ---------------------------
+# This is the main build job for your container.
+# It uses the .build_image_template for the logic
+# and .rule:build-simple for the rules.
 build:docker:
-  variables:
-    PUSH_ON_FEATURE: "true"
   stage: build
-  interruptible: true
   extends: .build_image_template
+  # You can set container-specific variables here
+  variables:
+    APP_NAME: "my-awesome-app" # Change this for each of your 60+ containers
+    # PUSH_ON_FEATURE: "true" # Uncomment to push images for feature branches
   rules: !reference [.rule:build-simple, rules]
 
-
+# The scan:container job is included from container-scan.gitlab-ci.yml.
+# It uses our new reusable rule to run on MRs or manually.
+scan:container:
+  rules: !reference [.rule:scan-on-mr-or-manual, rules]
