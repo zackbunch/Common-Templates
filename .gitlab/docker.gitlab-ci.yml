@@ -159,13 +159,13 @@
     # ---------- Auto suffix (overridable by TAG_SUFFIX) ----------
     - |
       case "${CI_PIPELINE_SOURCE:-}:${SRC_BRANCH:-}" in
-        merge_request_event:*) TAG_SUFFIX="${TAG_SUFFIX:-${MR_TAG_SUFFIX}}" ;; 
-        *:dev)                 TAG_SUFFIX="${TAG_SUFFIX:-${DEV_TAG_SUFFIX}}" ;; 
-        *:test)                TAG_SUFFIX="${TAG_SUFFIX:-${TEST_TAG_SUFFIX}}" ;; 
-        *:int)                 TAG_SUFFIX="${TAG_SUFFIX:-${INT_TAG_SUFFIX}}" ;; 
-        *:prod)                TAG_SUFFIX="${TAG_SUFFIX:-${PROD_TAG_SUFFIX}}"; TAG_LATEST="${TAG_LATEST:-true}" ;; 
-        *:${FEATURE_PREFIX}*)  TAG_SUFFIX="${TAG_SUFFIX:-${FEATURE_TAG_SUFFIX}}" ;; 
-        *) : ;; 
+        merge_request_event:*) TAG_SUFFIX="${TAG_SUFFIX:-${MR_TAG_SUFFIX}}" ;;
+        *:dev)                 TAG_SUFFIX="${TAG_SUFFIX:-${DEV_TAG_SUFFIX}}" ;;
+        *:test)                TAG_SUFFIX="${TAG_SUFFIX:-${TEST_TAG_SUFFIX}}" ;;
+        *:int)                 TAG_SUFFIX="${TAG_SUFFIX:-${INT_TAG_SUFFIX}}" ;;
+        *:prod)                TAG_SUFFIX="${TAG_SUFFIX:-${PROD_TAG_SUFFIX}}"; TAG_LATEST="${TAG_LATEST:-true}" ;;
+        *:${FEATURE_PREFIX}*)  TAG_SUFFIX="${TAG_SUFFIX:-${FEATURE_TAG_SUFFIX}}" ;;
+        *) : ;;
       esac
       [[ "${TAG_SUFFIX:-}" != "latest" ]] || { echo "TAG_SUFFIX cannot be 'latest'"; exit 1; }
       IMAGE_TAG="${TAG_SUFFIX:+${TAG_SUFFIX}-}${BASE_TAG}"
@@ -175,7 +175,7 @@
     - |
       if [[ "${AUTO_PUSH}" == "true" && "${PUSH_IMAGE}" != "true" ]]; then
         case "${SRC_BRANCH:-}" in
-          dev|test|int|prod) PUSH_IMAGE="true" ;; 
+          dev|test|int|prod) PUSH_IMAGE="true" ;;
           *)
             if [[ -n "${IS_TAG_PIPE}" ]]; then
               PUSH_IMAGE="true"
@@ -184,34 +184,14 @@
             else
               PUSH_IMAGE="false"
             fi
-          ;; 
+          ;;
         esac
       fi
-
-    # ---------- Define Cache Images ----------
-    - |
-      CACHE_FROM_IMAGES=()
-      # Use the branch slug for a stable cache tag per branch
-      BRANCH_CACHE_IMAGE="${IMAGE_REPO}:${CI_COMMIT_REF_SLUG}"
-      CACHE_FROM_IMAGES+=("--cache-from ${BRANCH_CACHE_IMAGE}")
-
-      # Also use the :latest tag as a fallback cache
-      LATEST_CACHE_IMAGE="${IMAGE_REPO}:latest"
-      if [[ "${CI_COMMIT_REF_SLUG}" != "latest" ]]; then
-          CACHE_FROM_IMAGES+=("--cache-from ${LATEST_CACHE_IMAGE}")
-      fi
-
-      # Pull cache images, but do not fail if they don't exist
-      echo "Attempting to pull cache from ${BRANCH_CACHE_IMAGE}"
-      docker pull "${BRANCH_CACHE_IMAGE}" || true
-      echo "Attempting to pull cache from ${LATEST_CACHE_IMAGE}"
-      docker pull "${LATEST_CACHE_IMAGE}" || true
 
     # ---------- Build ----------
     - |
       echo "Building ${IMAGE_REPO}:${IMAGE_TAG} using ${DOCKERFILE} (context: ${DOCKER_CONTEXT})"
       docker build --pull \
-        ${CACHE_FROM_IMAGES[@]} \
         -f "${DOCKERFILE}" \
         --label "org.opencontainers.image.source=${CI_PROJECT_URL:-}" \
         --label "org.opencontainers.image.revision=${CI_COMMIT_SHA:-}" \
@@ -222,7 +202,6 @@
         --build-arg CI_PROJECT_ID="${CI_PROJECT_ID}" \
         --build-arg CI_SERVER_URL="${CI_SERVER_URL}" \
         -t "${IMAGE_REPO}:${IMAGE_TAG}" \
-        -t "${BRANCH_CACHE_IMAGE}" \
         "${DOCKER_CONTEXT}"
 
     # Tag latest for prod branch or tag pipeline, or if explicitly requested
@@ -236,19 +215,11 @@
       if [[ "${PUSH_IMAGE}" == "true" ]]; then
         echo "Login ${CI_REGISTRY} as ${CI_REGISTRY_USER}"
         docker login -u "${CI_REGISTRY_USER}" -p "${CI_JOB_TOKEN}" "${CI_REGISTRY}"
-        
         echo "Pushing ${IMAGE_REPO}:${IMAGE_TAG}"
         docker push "${IMAGE_REPO}:${IMAGE_TAG}"
-        
         if [[ "${TAG_LATEST}" == "true" || -n "${IS_TAG_PIPE:-}" ]]; then
-          echo "Pushing ${IMAGE_REPO}:latest"
           docker push "${IMAGE_REPO}:latest"
         fi
-
-        # Also push the branch-specific cache image
-        echo "Pushing cache image ${BRANCH_CACHE_IMAGE}"
-        docker push "${BRANCH_CACHE_IMAGE}"
-
         DIGEST="$(docker inspect --format='{{index .RepoDigests 0}}' "${IMAGE_REPO}:${IMAGE_TAG}" || true)"
       else
         DIGEST=""
