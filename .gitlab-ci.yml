@@ -22,10 +22,6 @@ build:docker:
   rules: !reference [.rule:build-simple, rules]
 
 # The scan:container job is included from container-scan.gitlab-ci.yml.
-# It will automatically run after build:docker on merge requests,
-# as defined by the .rule:scan-on-mr-to-env rule.
-#
-# If you wanted to scan on every merge request, you could override the rule like this:
-#
-# scan:container:
-#   rules: !reference [.rule:mr-only, rules]
+# It uses our new reusable rule to run on MRs or manually.
+scan:container:
+  rules: !reference [.rule:scan-on-mr-or-manual, rules]
