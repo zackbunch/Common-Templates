@@ -21,3 +21,8 @@ build:docker:
     APP_NAME: "my-awesome-app" # Change this for each of your 60+ containers
     # PUSH_ON_FEATURE: "true" # Uncomment to push images for feature branches
   rules: !reference [.rule:build-simple, rules]
+
+# The scan:container job is included from container-scan.gitlab-ci.yml.
+# It uses our new reusable rule to run on MRs or manually.
+scan:container:
+  rules: !reference [.rule:scan-on-mr-or-manual, rules]
