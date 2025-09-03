@@ -5,6 +5,7 @@ include:
   - local: /.gitlab/job-rules.gitlab-ci.yml
   - local: /.gitlab/container-scan.gitlab-ci.yml
   - local: /.gitlab/secrets.gitlab-ci.yml
+  - local: /.gitlab/release.gitlab-ci.yml
 
 stages:
   - build
