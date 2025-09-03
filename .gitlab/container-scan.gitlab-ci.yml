@@ -54,7 +54,7 @@ scan:container:
       echo "Scanning ${IMAGE_REF} ..."
   script:
     - gtcs scan
-  rules: !reference [.rule:scan-on-mr-to-env, rules]
+  rules: !reference [.rule:scan-on-mr-or-manual, rules]
   artifacts:
     access: 'developer'
     reports:
