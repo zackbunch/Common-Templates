@@ -1,4 +1,25 @@
-# .gitlab/build.gitlab-ci.yml
+# This file contains templates for building and pushing Docker images.
+#
+# The templates are designed to be reusable and configurable for different
+# scenarios, such as building feature branches, merge requests, and releases.
+#
+# The following variables can be set to change the functionality of the
+# templates:
+#
+#   - APP_NAME: The name of the application. This is used to construct the
+#     image name.
+#   - DOCKER_CONTEXT: The context to use for the Docker build. Defaults to ".".
+#   - DOCKERFILE: The path to the Dockerfile. Defaults to "Dockerfile".
+#   - PUSH_IMAGE: Whether to push the image to the registry. Defaults to "false".
+#   - RELEASE_IMAGE: Whether this is a release build. Defaults to "false".
+#   - TAG_LATEST: Whether to tag the image with "latest". Defaults to "false".
+#   - TAG_SUFFIX: A suffix to add to the image tag.
+#   - AUTO_PUSH: Whether to automatically push the image for certain branches
+#     and tags. Defaults to "true".
+#   - PUSH_ON_FEATURE: Whether to push the image for feature branches. Defaults
+#     to "false".
+#
+# .gitlab/docker.gitlab-ci.yml
 .build-dind:
   image: docker:24.0.5
   services: [ "docker:24.0.5-dind" ]
@@ -31,7 +52,11 @@
     set -euo pipefail
 
     # Image path: use project path; append /APP_NAME only if provided
-    IMAGE_REPO="${CI_REGISTRY_IMAGE}"
+    if [ "${RELEASE_IMAGE}" = "true" ]; then
+      IMAGE_REPO="${CI_REGISTRY_IMAGE}/releases"
+    else
+      IMAGE_REPO="${CI_REGISTRY_IMAGE}"
+    fi
     if [ -n "${APP_NAME:-}" ]; then
       # sanitize app name
       APP_NAME="$(printf '%s' "${APP_NAME}" | tr '[:upper:] ' '[:lower:]-' | tr -cd 'a-z0-9._-')"
@@ -144,7 +169,11 @@
         APP_NAME="$(printf '%s' "${APP_NAME}" | tr '[:upper:] ' '[:lower:]-' | tr -cd 'a-z0-9._-')"
         [[ -n "${APP_NAME}" ]] || { echo "bad APP_NAME"; exit 1; }
       fi
-      IMAGE_REPO="${CI_REGISTRY_IMAGE}${APP_NAME:+/${APP_NAME}}"
+      if [[ -n "${CI_COMMIT_TAG:-}" ]]; then
+        IMAGE_REPO="${CI_REGISTRY_IMAGE}/releases${APP_NAME:+/${APP_NAME}}"
+      else
+        IMAGE_REPO="${CI_REGISTRY_IMAGE}${APP_NAME:+/${APP_NAME}}"
+      fi
 
     # ---------- Base tag ----------
     - |
