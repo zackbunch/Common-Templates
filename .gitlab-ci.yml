@@ -1,7 +1,7 @@
 # .gitlab-ci.yml
 
 include:
-  - local: /.gitlab/docker.gitlab-ci.yml
+  - local: /.gitlab/build.gitlab-ci.yml
   - local: /.gitlab/job-rules.gitlab-ci.yml
   - local: /.gitlab/container-scan.gitlab-ci.yml
   - local: /.gitlab/secrets.gitlab-ci.yml
@@ -21,6 +21,6 @@ build:docker:
   # You can set container-specific variables here
   variables:
     APP_NAME: "templates"
-    PUSH_ON_FEATURE: "true" # Uncomment to push images for feature branches
+    PUSH_ON_FEATURE: "true"
   rules: !reference [.rule:build-simple, rules]
 
