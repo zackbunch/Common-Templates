@@ -30,7 +30,7 @@ docker-build:
   # The `latest` tag is added for the default branch.
   script:
     - docker pull "$DOCKER_IMAGE_NAME_LATEST" || true
-    - docker build --pull --cache-from "$DOCKER_IMAGE_NAME_LATEST" -t "$DOCKER_IMAGE_NAME_WITH_SHA" .
+    - docker build "$DOCKER_IMAGE_NAME_LATEST" -t "$DOCKER_IMAGE_NAME_WITH_SHA" .
     - |
       if [[ ! "$CI_COMMIT_BRANCH" =~ ^gmarm- ]] || [[ "$PUSH_FEATURE_BRANCH" == "true" ]]; then
         echo "Pushing image $DOCKER_IMAGE_NAME_WITH_SHA"

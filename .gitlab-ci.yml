@@ -15,6 +15,7 @@ stages:
 
 variables:
   APP_NAME: syactemplate
+  PUSH_FEATURE_BRANCH: true
 
 # # This is the main build job for your container.
 # # It uses the .build_image_template for the logic
