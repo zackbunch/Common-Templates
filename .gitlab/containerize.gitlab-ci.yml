@@ -15,22 +15,29 @@ docker-build:
   stage: build
   services:
     - docker:dind
-  variables:
-    DOCKER_IMAGE_NAME: $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG
+
   before_script:
     - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" $CI_REGISTRY
-  # All branches are tagged with $DOCKER_IMAGE_NAME (defaults to commit ref slug)
-  # Default branch is also tagged with `latest`
+    - |
+      if [[ -n "$APP_NAME" ]]; then
+        export BASE_IMAGE_PATH="$CI_REGISTRY_IMAGE/$APP_NAME"
+      else
+        export BASE_IMAGE_PATH="$CI_REGISTRY_IMAGE"
+      fi
+      export DOCKER_IMAGE_NAME_WITH_SHA="$BASE_IMAGE_PATH:$CI_COMMIT_SHORT_SHA"
+      export DOCKER_IMAGE_NAME_LATEST="$BASE_IMAGE_PATH:latest"
+  # All branches are tagged with the commit short SHA.
+  # The `latest` tag is added for the default branch.
   script:
-    - docker pull "$CI_REGISTRY_IMAGE:latest" || true
-    - docker build --pull --cache-from "$CI_REGISTRY_IMAGE:latest" -t "$DOCKER_IMAGE_NAME" .
+    - docker pull "$DOCKER_IMAGE_NAME_LATEST" || true
+    - docker build --pull --cache-from "$DOCKER_IMAGE_NAME_LATEST" -t "$DOCKER_IMAGE_NAME_WITH_SHA" .
     - |
       if [[ ! "$CI_COMMIT_BRANCH" =~ ^gmarm- ]] || [[ "$PUSH_FEATURE_BRANCH" == "true" ]]; then
-        echo "Pushing image for branch $CI_COMMIT_BRANCH"
-        docker push "$DOCKER_IMAGE_NAME"
+        echo "Pushing image $DOCKER_IMAGE_NAME_WITH_SHA"
+        docker push "$DOCKER_IMAGE_NAME_WITH_SHA"
         if [[ "$CI_COMMIT_BRANCH" == "$CI_DEFAULT_BRANCH" ]]; then
-          docker tag "$DOCKER_IMAGE_NAME" "$CI_REGISTRY_IMAGE:latest"
-          docker push "$CI_REGISTRY_IMAGE:latest"
+          docker tag "$DOCKER_IMAGE_NAME_WITH_SHA" "$DOCKER_IMAGE_NAME_LATEST"
+          docker push "$DOCKER_IMAGE_NAME_LATEST"
         fi
       else
         echo "Skipping image push for feature branch. Set PUSH_FEATURE_BRANCH=true to override."

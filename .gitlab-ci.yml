@@ -13,6 +13,9 @@ stages:
   - scan
   - release
 
+variables:
+  APP_NAME: syactemplate
+
 # # This is the main build job for your container.
 # # It uses the .build_image_template for the logic
 # # and .rule:build-simple for the rules.
