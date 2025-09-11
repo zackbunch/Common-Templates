@@ -19,7 +19,9 @@ docker-build:
   before_script:
     - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" $CI_REGISTRY
     - |
-      if [[ -n "$CI_MERGE_REQUEST_IID" ]]; then
+      if [[ -n "$CI_COMMIT_TAG" ]]; then
+        export IMAGE_TAG="$CI_COMMIT_TAG"
+      elif [[ -n "$CI_MERGE_REQUEST_IID" ]]; then
         export IMAGE_TAG="mr-$CI_MERGE_REQUEST_IID"
       else
         export IMAGE_TAG="$CI_COMMIT_SHORT_SHA"
@@ -34,13 +36,14 @@ docker-build:
       export DOCKER_IMAGE_NAME_WITH_TAG="$BASE_IMAGE_PATH:$IMAGE_TAG"
       export DOCKER_IMAGE_NAME_LATEST="$BASE_IMAGE_PATH:latest"
   # Tagging logic:
+  # - For git tags: the git tag itself (e.g., v1.2.3)
   # - For MRs: mr-IID
   # - For branch builds: commit short SHA
   # - For default branch, 'latest' is also pushed.
   script:
     - docker build --pull -t "$DOCKER_IMAGE_NAME_WITH_TAG" .
     - |
-      if [[ -n "$CI_MERGE_REQUEST_IID" ]] || [[ ! "$CI_COMMIT_BRANCH" =~ ^gmarm- ]] || [[ "$PUSH_FEATURE_BRANCH" == "true" ]]; then
+      if [[ -n "$CI_COMMIT_TAG" ]] || [[ -n "$CI_MERGE_REQUEST_IID" ]] || [[ ! "$CI_COMMIT_BRANCH" =~ ^gmarm- ]] || [[ "$PUSH_FEATURE_BRANCH" == "true" ]]; then
         echo "Pushing image $DOCKER_IMAGE_NAME_WITH_TAG"
         docker push "$DOCKER_IMAGE_NAME_WITH_TAG"
         if [[ "$CI_COMMIT_BRANCH" == "$CI_DEFAULT_BRANCH" ]]; then
@@ -50,8 +53,11 @@ docker-build:
       else
         echo "Skipping image push for branch build. Set PUSH_FEATURE_BRANCH=true to override."
       fi
-  # Run this job in a branch where a Dockerfile exists
+  # Run this job in a branch or tag where a Dockerfile exists
   rules:
     - if: $CI_COMMIT_BRANCH
+      exists:
+        - Dockerfile
+    - if: $CI_COMMIT_TAG
       exists:
         - Dockerfile
