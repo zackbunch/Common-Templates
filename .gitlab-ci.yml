@@ -29,7 +29,7 @@ workflow:
     - if: $CI_COMMIT_TAG
 
 variables:
-  # APP_NAME: syactemplate
+  APP_NAME: syactemplate
   PUSH_FEATURE_BRANCH: true
 
 # # This is the main build job for your container.
