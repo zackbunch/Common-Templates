@@ -72,6 +72,7 @@ build:docker:
       echo "DOCKER_IMAGE_NAME=$DOCKER_IMAGE_NAME_WITH_TAG" >> docker.env
       echo "DOCKER_IMAGE_TAG=$IMAGE_TAG" >> docker.env
       echo "DOCKER_BASE_IMAGE_PATH=$BASE_IMAGE_PATH" >> docker.env
+      echo "CS_IMAGE=$DOCKER_BASE_IMAGE_PATH@$DOCKER_IMAGE_DIGEST" >> docker.env
   artifacts:
     reports:
       dotenv: docker.env
