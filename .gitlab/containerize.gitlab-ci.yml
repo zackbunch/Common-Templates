@@ -19,27 +19,36 @@ docker-build:
   before_script:
     - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" $CI_REGISTRY
     - |
+      if [[ -n "$CI_MERGE_REQUEST_IID" ]]; then
+        export IMAGE_TAG="mr-$CI_MERGE_REQUEST_IID"
+      else
+        export IMAGE_TAG="$CI_COMMIT_SHORT_SHA"
+      fi
+
       if [[ -n "$APP_NAME" ]]; then
         export BASE_IMAGE_PATH="$CI_REGISTRY_IMAGE/$APP_NAME"
       else
         export BASE_IMAGE_PATH="$CI_REGISTRY_IMAGE"
       fi
-      export DOCKER_IMAGE_NAME_WITH_SHA="$BASE_IMAGE_PATH:$CI_COMMIT_SHORT_SHA"
+
+      export DOCKER_IMAGE_NAME_WITH_TAG="$BASE_IMAGE_PATH:$IMAGE_TAG"
       export DOCKER_IMAGE_NAME_LATEST="$BASE_IMAGE_PATH:latest"
-  # All branches are tagged with the commit short SHA.
-  # The `latest` tag is added for the default branch.
+  # Tagging logic:
+  # - For MRs: mr-IID
+  # - For branch builds: commit short SHA
+  # - For default branch, 'latest' is also pushed.
   script:
-    - docker build --pull -t "$DOCKER_IMAGE_NAME_WITH_SHA" .
+    - docker build --pull -t "$DOCKER_IMAGE_NAME_WITH_TAG" .
     - |
-      if [[ ! "$CI_COMMIT_BRANCH" =~ ^gmarm- ]] || [[ "$PUSH_FEATURE_BRANCH" == "true" ]]; then
-        echo "Pushing image $DOCKER_IMAGE_NAME_WITH_SHA"
-        docker push "$DOCKER_IMAGE_NAME_WITH_SHA"
+      if [[ -n "$CI_MERGE_REQUEST_IID" ]] || [[ ! "$CI_COMMIT_BRANCH" =~ ^gmarm- ]] || [[ "$PUSH_FEATURE_BRANCH" == "true" ]]; then
+        echo "Pushing image $DOCKER_IMAGE_NAME_WITH_TAG"
+        docker push "$DOCKER_IMAGE_NAME_WITH_TAG"
         if [[ "$CI_COMMIT_BRANCH" == "$CI_DEFAULT_BRANCH" ]]; then
-          docker tag "$DOCKER_IMAGE_NAME_WITH_SHA" "$DOCKER_IMAGE_NAME_LATEST"
+          docker tag "$DOCKER_IMAGE_NAME_WITH_TAG" "$DOCKER_IMAGE_NAME_LATEST"
           docker push "$DOCKER_IMAGE_NAME_LATEST"
         fi
       else
-        echo "Skipping image push for feature branch. Set PUSH_FEATURE_BRANCH=true to override."
+        echo "Skipping image push for branch build. Set PUSH_FEATURE_BRANCH=true to override."
       fi
   # Run this job in a branch where a Dockerfile exists
   rules:
