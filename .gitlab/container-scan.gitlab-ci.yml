@@ -24,39 +24,30 @@ variables:
 scan:container:
   image: "$CS_ANALYZER_IMAGE$CS_IMAGE_SUFFIX"
   stage: scan
-  # Pull the dotenv from your build job; tolerate pipelines where build didn't run
   needs:
     - job: build:docker
       artifacts: true
       optional: true
   allow_failure: true
   variables:
-    # 1) point the analyzer at the immutable digest injected by dotenv
-    CS_IMAGE: "$IMAGE_REF"
+    GIT_STRATEGY: none
     CS_REGISTRY: "$CI_REGISTRY"
     CS_REGISTRY_USER: "$CI_REGISTRY_USER"
     CS_REGISTRY_PASSWORD: "$CI_JOB_TOKEN"
     CS_SCHEMA_MODEL: 15
-
-    # Optional tuning
-    GIT_STRATEGY: none
-    # CS_SEVERITY_THRESHOLD: "critical"
-    # CS_DISABLE_LANGUAGE_VULNERABILITY_SCAN: "true"
-    # CS_TRIVY_TIMEOUT: "5m"
-
-  # Gate on ENV (scheduler doesn't see dotenv; do it at runtime)
   before_script:
     - set -euo pipefail 2>/dev/null || set -eu
     - |
       if [ -z "${IMAGE_REF:-}" ] || [ "${IMAGE_REF}" = "skipped" ]; then
-        echo "No IMAGE_REF (build skipped or not pushed) — exit 0"; exit 0
+        echo "No IMAGE_REF — exit 0"; exit 0
       fi
-      echo "Scanning ${IMAGE_REF} ..."
+      export CS_IMAGE="${IMAGE_REF}"
+      echo "Scanning ${CS_IMAGE}"
   script:
     - gtcs scan
   rules: !reference [.rule:scan-on-mr-or-manual, rules]
   artifacts:
-    access: 'developer'
+    access: developer
     reports:
       container_scanning: gl-container-scanning-report.json
       cyclonedx: "**/gl-sbom-*.cdx.json"
@@ -64,6 +55,5 @@ scan:container:
       - gl-container-scanning-report.json
       - gl-dependency-scanning-report.json
       - "**/gl-sbom-*.cdx.json"
-
 
 

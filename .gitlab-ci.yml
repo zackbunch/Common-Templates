@@ -1,24 +1,46 @@
 # .gitlab-ci.yml
 
 include:
-  - local: /.gitlab/docker.gitlab-ci.yml
+  # - local: /.gitlab/build.gitlab-ci.yml
+  - local: /.gitlab/containerize.gitlab-ci.yml
   - local: /.gitlab/job-rules.gitlab-ci.yml
   - local: /.gitlab/container-scan.gitlab-ci.yml
   - local: /.gitlab/secrets.gitlab-ci.yml
+  # - local: /.gitlab/release.gitlab-ci.yml
 
 stages:
   - build
   - scan
+  - release
 
-# This is the main build job for your container.
-# It uses the .build_image_template for the logic
-# and .rule:build-simple for the rules.
-build:docker:
-  stage: build
-  extends: .build_image_template
-  # You can set container-specific variables here
-  variables:
-    APP_NAME: "templates"
-    PUSH_ON_FEATURE: "true" # Uncomment to push images for feature branches
-  rules: !reference [.rule:build-simple, rules]
+workflow:
+  rules:
+    # Always allow MR pipelines
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
+    # If this is a branch push *and* the branch has an open MR → do not create a branch pipeline
+    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
+      when: never
+
+    # Otherwise run for normal branch pushes
+    - if: $CI_COMMIT_BRANCH
+
+    # Still allow tag pipelines
+    - if: $CI_COMMIT_TAG
+
+variables:
+  APP_NAME: syactemplate
+  PUSH_FEATURE_BRANCH: true
+
+# # This is the main build job for your container.
+# # It uses the .build_image_template for the logic
+# # and .rule:build-simple for the rules.
+# build:docker:
+#   stage: build
+#   extends: .build_image_template
+#   # You can set container-specific variables here
+#   variables:
+#     APP_NAME: "templates"
+#     PUSH_ON_FEATURE: "true"
+#   rules: !reference [.rule:build-simple, rules]
 
