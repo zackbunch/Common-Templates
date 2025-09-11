@@ -68,13 +68,19 @@ build:docker:
         echo "Skipping image push for branch build. Set PUSH_FEATURE_BRANCH=true to override."
       fi
     - |
+      # Create the dotenv artifact
+      if [[ -n "${IMAGE_DIGEST:-}" ]]; then
+        export SCAN_IMAGE_REF="$BASE_IMAGE_PATH@$IMAGE_DIGEST"
+      else
+        export SCAN_IMAGE_REF=""
+      fi
+
       echo "DOCKER_IMAGE_DIGEST=${IMAGE_DIGEST:-}" > docker.env
       echo "DOCKER_IMAGE_NAME=$DOCKER_IMAGE_NAME_WITH_TAG" >> docker.env
       echo "DOCKER_IMAGE_TAG=$IMAGE_TAG" >> docker.env
       echo "DOCKER_BASE_IMAGE_PATH=$BASE_IMAGE_PATH" >> docker.env
-      echo "CS_IMAGE=$DOCKER_BASE_IMAGE_PATH@$DOCKER_IMAGE_DIGEST" >> docker.env
+      echo "CS_IMAGE=${SCAN_IMAGE_REF:-}" >> docker.env
+      echo "IMAGE_REF=${SCAN_IMAGE_REF:-}" >> docker.env
   artifacts:
     reports:
       dotenv: docker.env
-    paths:
-      - docker.env
