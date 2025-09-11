@@ -75,3 +75,5 @@ build:docker:
   artifacts:
     reports:
       dotenv: docker.env
+    paths:
+      - docker.env
