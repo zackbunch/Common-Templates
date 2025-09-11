@@ -19,6 +19,19 @@ build:docker:
   before_script:
     - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" $CI_REGISTRY
     - |
+      # Determine the base image path
+      if [[ -n "$CI_COMMIT_TAG" ]]; then
+        export BASE_IMAGE_PATH="$CI_REGISTRY_IMAGE/releases"
+      else
+        export BASE_IMAGE_PATH="$CI_REGISTRY_IMAGE"
+      fi
+
+      # Append APP_NAME if it exists
+      if [[ -n "$APP_NAME" ]]; then
+        export BASE_IMAGE_PATH="$BASE_IMAGE_PATH/$APP_NAME"
+      fi
+
+      # Determine the image tag
       if [[ -n "$CI_COMMIT_TAG" ]]; then
         export IMAGE_TAG="$CI_COMMIT_TAG"
       elif [[ -n "$CI_MERGE_REQUEST_IID" ]]; then
@@ -27,12 +40,7 @@ build:docker:
         export IMAGE_TAG="$CI_COMMIT_SHORT_SHA"
       fi
 
-      if [[ -n "$APP_NAME" ]]; then
-        export BASE_IMAGE_PATH="$CI_REGISTRY_IMAGE/$APP_NAME"
-      else
-        export BASE_IMAGE_PATH="$CI_REGISTRY_IMAGE"
-      fi
-
+      # Construct final image names
       export DOCKER_IMAGE_NAME_WITH_TAG="$BASE_IMAGE_PATH:$IMAGE_TAG"
       export DOCKER_IMAGE_NAME_LATEST="$BASE_IMAGE_PATH:latest"
   # Tagging logic:
@@ -46,7 +54,8 @@ build:docker:
       if [[ -n "$CI_COMMIT_TAG" ]] || [[ -n "$CI_MERGE_REQUEST_IID" ]] || [[ ! "$CI_COMMIT_BRANCH" =~ ^gmarm- ]] || [[ "$PUSH_FEATURE_BRANCH" == "true" ]]; then
         echo "Pushing image $DOCKER_IMAGE_NAME_WITH_TAG"
         docker push "$DOCKER_IMAGE_NAME_WITH_TAG"
-        if [[ "$CI_COMMIT_BRANCH" == "$CI_DEFAULT_BRANCH" ]]; then
+        if [[ "$CI_COMMIT_BRANCH" == "$CI_DEFAULT_BRANCH" ]] || [[ -n "$CI_COMMIT_TAG" ]]; then
+          echo "Tagging image as latest"
           docker tag "$DOCKER_IMAGE_NAME_WITH_TAG" "$DOCKER_IMAGE_NAME_LATEST"
           docker push "$DOCKER_IMAGE_NAME_LATEST"
         fi
