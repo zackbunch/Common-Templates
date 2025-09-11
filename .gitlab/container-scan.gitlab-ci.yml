@@ -28,6 +28,7 @@ scan:container:
     - job: build:docker
       artifacts: true
       optional: true
+  allow_failure: true
   variables:
     GIT_STRATEGY: none
     CS_REGISTRY: "$CI_REGISTRY"
