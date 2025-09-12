@@ -5,7 +5,7 @@ variables:
 .before_docker: &before_docker
   - set -euo pipefail
   - echo "$CI_JOB_TOKEN" | docker login -u gitlab-ci-token --password-stdin "$CI_REGISTRY"
-  - docker version
+
 
 .compute_meta: &compute_meta |
   set -euo pipefail
