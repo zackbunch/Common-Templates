@@ -1,23 +1,12 @@
 stages:
-  - build
-  - scan
-  - promote
   - release
 
-# your .promote … unchanged
-
-# One release job per env (or a single job that loops over envs—your call)
 release:dev:
   stage: release
   image: registry.gitlab.com/gitlab-org/release-cli:v0.18.0
   needs:
     - job: promote:dev
       artifacts: true
-    - job: scan:container
-      artifacts: true
-  artifacts:
-    paths:
-      - gl-container-scanning-report.json
   rules:
     - if: '$CI_COMMIT_TAG'
   retry: { max: 0 }
