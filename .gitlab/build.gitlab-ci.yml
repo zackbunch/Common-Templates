@@ -160,7 +160,6 @@
         echo "IMAGE_REF=${DIGEST:-skipped}"
         echo "IMAGE_DIGEST=${DIGEST#*@sha256:}"
       } > image-digest.env
-
   artifacts:
     reports:
       dotenv: image-digest.env
