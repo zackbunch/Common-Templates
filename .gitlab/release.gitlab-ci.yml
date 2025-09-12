@@ -13,6 +13,11 @@ release:dev:
   needs:
     - job: promote:dev
       artifacts: true
+    - job: scan:container
+      artifacts: true
+  artifacts:
+    paths:
+      - gl-container-scanning-report.json
   rules:
     - if: '$CI_COMMIT_TAG'
   retry: { max: 0 }
