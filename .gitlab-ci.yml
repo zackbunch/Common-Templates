@@ -6,8 +6,9 @@ include:
   - local: /.gitlab/container-scan.gitlab-ci.yml
   - local: /.gitlab/secrets.gitlab-ci.yml
   - local: /.gitlab/promote.gitlab-ci.yml
+  - local: /.gitlab/release.gitlab-ci.yml
 
-stages: [build, scan, promote]
+stages: [build, scan, promote, release]
 
 workflow:
   rules:
@@ -29,4 +30,4 @@ default:
 
 variables:
   APP_NAME: syactemplate
-  PUSH_FEATURE_BRANCH: "true"
+  PUSH_FEATURE_BRANCH: "false"
