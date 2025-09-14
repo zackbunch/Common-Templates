@@ -29,7 +29,7 @@ scan:container:
       echo "Scanning Image using Digest ${CS_IMAGE}"
   script:
     - gtcs scan
-  rules: !reference [.rule:scan-dev-or-tag, rules]
+  rules: !reference [.rule:scan-on-mr-or-manual, rules]
   artifacts:
     access: developer
     reports:
