@@ -44,7 +44,9 @@ build:docker:
     - |
       set -eu
 
-      docker build --pull -t "$DOCKER_IMAGE_WITH_TAG" .
+      docker build --pull \
+      --build-arg CI_REGISTRY=$CI_REGISTRY \
+      -t "$DOCKER_IMAGE_WITH_TAG" .
 
       IMAGE_PUSHED="false"
       DIGEST=""
