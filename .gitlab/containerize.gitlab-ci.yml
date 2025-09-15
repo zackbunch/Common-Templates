@@ -1,86 +1,115 @@
-variables:
-  DOCKER_TLS_CERTDIR: ""   # disable TLS for DinD
+# Minimal Docker build/push job for privileged runners (DinD, POSIX-sh safe)
 
-# Reusable snippet for auth + shell hygiene
+variables:
+  DOCKER_TLS_CERTDIR: ""                 # disable TLS for DinD
+  # DOCKER_HOST: "tcp://docker:2375"       # talk to DinD
+  PUSH_FEATURE_BRANCH: "false"           # set true to push from non-default, non-MR branches
+
 .before_docker: &before_docker
-  - set -euo pipefail
+  - set -eu
   - echo "$CI_JOB_TOKEN" | docker login -u gitlab-ci-token --password-stdin "$CI_REGISTRY"
 
-
 .compute_meta: &compute_meta |
-  set -euo pipefail
+  set -eu
   BASE_IMAGE_PATH="$CI_REGISTRY_IMAGE"
-  if [[ -n "${APP_NAME:-}" ]]; then
+  if [ -n "${APP_NAME:-}" ]; then
     BASE_IMAGE_PATH="$BASE_IMAGE_PATH/$APP_NAME"
   fi
 
-  if [[ -n "${CI_COMMIT_TAG:-}" ]]; then
-    BASE_IMAGE_PATH="$CI_REGISTRY_IMAGE/releases${APP_NAME:+/$APP_NAME}"
+  if [ -n "${CI_COMMIT_TAG:-}" ]; then
     IMAGE_TAG="$CI_COMMIT_TAG"
-  elif [[ -n "${CI_MERGE_REQUEST_IID:-}" ]]; then
+  elif [ -n "${CI_MERGE_REQUEST_IID:-}" ]; then
     IMAGE_TAG="mr-${CI_MERGE_REQUEST_IID}-${CI_COMMIT_SHORT_SHA}"
   else
     IMAGE_TAG="$CI_COMMIT_SHORT_SHA"
   fi
 
-  IMAGE_TAG_LATEST="latest"
-  DOCKER_IMAGE_NAME_WITH_TAG="${BASE_IMAGE_PATH}:${IMAGE_TAG}"
-  DOCKER_IMAGE_LATEST="${BASE_IMAGE_PATH}:${IMAGE_TAG_LATEST}"
+  DOCKER_IMAGE_REPO="$BASE_IMAGE_PATH"
+  DOCKER_IMAGE_WITH_TAG="$BASE_IMAGE_PATH:$IMAGE_TAG"
+  DOCKER_IMAGE_LATEST="$BASE_IMAGE_PATH:latest"
 
 build:docker:
-  image: docker:cli
+  image: docker:24-cli
   stage: build
   services:
-    - docker:dind
+    - name: docker:24-dind
+      alias: docker
   resource_group: "$CI_PROJECT_PATH:$CI_COMMIT_REF_SLUG"
+
   before_script:
     - *before_docker
     - *compute_meta
+
   script:
     - |
-      set -euo pipefail
-      docker build --pull -t "${DOCKER_IMAGE_NAME_WITH_TAG}" .
+      set -eu
+
+      docker build --pull -t "$DOCKER_IMAGE_WITH_TAG" .
+
       IMAGE_PUSHED="false"
       DIGEST=""
-      SCAN_IMAGE_REF=""
-      if [[ "${CI_COMMIT_BRANCH:-}" = "${CI_DEFAULT_BRANCH}" || -n "${CI_COMMIT_TAG:-}" || "${CI_PIPELINE_SOURCE:-}" = "merge_request_event" || "${PUSH_FEATURE_BRANCH:-}" = "true" ]]; then
+      IMAGE_REF=""
+
+      # Push policy: default branch, tag, MR, or opt-in feature
+      SHOULD_PUSH="false"
+      if [ "${CI_PIPELINE_SOURCE:-}" = "merge_request_event" ]; then
+        SHOULD_PUSH="true"
+      fi
+      if [ -n "${CI_COMMIT_TAG:-}" ]; then
+        SHOULD_PUSH="true"
+      fi
+      if [ -n "${CI_COMMIT_BRANCH:-}" ] && [ "$CI_COMMIT_BRANCH" = "$CI_DEFAULT_BRANCH" ]; then
+        SHOULD_PUSH="true"
+      fi
+      if [ "${PUSH_FEATURE_BRANCH:-false}" = "true" ]; then
+        SHOULD_PUSH="true"
+      fi
+
+      if [ "$SHOULD_PUSH" = "true" ]; then
         IMAGE_PUSHED="true"
-        echo "Pushing image ${DOCKER_IMAGE_NAME_WITH_TAG}"
-        docker push "${DOCKER_IMAGE_NAME_WITH_TAG}"
-        # Inspect digest of pushed image
-        docker pull "${DOCKER_IMAGE_NAME_WITH_TAG}"
-        DIGEST="$(docker inspect --format='{{index .RepoDigests 0}}' "${DOCKER_IMAGE_NAME_WITH_TAG}" | cut -d'@' -f2)"
-        SCAN_IMAGE_REF="${BASE_IMAGE_PATH}@${DIGEST}"
-        # Handle latest only for default branch and tags
-        if [[ "${CI_COMMIT_BRANCH:-}" = "${CI_DEFAULT_BRANCH}" || -n "${CI_COMMIT_TAG:-}" ]]; then
-          docker tag "${DOCKER_IMAGE_NAME_WITH_TAG}" "${DOCKER_IMAGE_LATEST}"
-          docker push "${DOCKER_IMAGE_LATEST}"
+        docker push "$DOCKER_IMAGE_WITH_TAG"
+
+        # Capture digest
+        docker pull "$DOCKER_IMAGE_WITH_TAG" >/dev/null 2>&1 || true
+        DIGEST="$(docker inspect --format='{{index .RepoDigests 0}}' "$DOCKER_IMAGE_WITH_TAG" 2>/dev/null | cut -d'@' -f2 || true)"
+        if [ -n "$DIGEST" ]; then
+          IMAGE_REF="$DOCKER_IMAGE_REPO@$DIGEST"
+        fi
+
+        # Push 'latest' only for default branch
+        if [ -n "${CI_COMMIT_BRANCH:-}" ] && [ "$CI_COMMIT_BRANCH" = "$CI_DEFAULT_BRANCH" ]; then
+          docker tag "$DOCKER_IMAGE_WITH_TAG" "$DOCKER_IMAGE_LATEST"
+          docker push "$DOCKER_IMAGE_LATEST"
         fi
       else
-        echo "Skipping image push."
+        echo "Skipping push."
       fi
-      # Emit dotenv for downstream
+
+      # Emit dotenv
       {
-        echo "DOCKER_IMAGE_PUSHED=${IMAGE_PUSHED}"
-        echo "DOCKER_IMAGE_NAME=${DOCKER_IMAGE_NAME_WITH_TAG}"
-        echo "DOCKER_IMAGE_TAG=${IMAGE_TAG}"
-        echo "DOCKER_BASE_IMAGE_PATH=${BASE_IMAGE_PATH}"
-        echo "DOCKER_IMAGE_DIGEST=${DIGEST}"
-        echo "IMAGE_REF=${SCAN_IMAGE_REF}"
-        echo "CS_IMAGE=${SCAN_IMAGE_REF}"
+        echo "DOCKER_IMAGE_PUSHED=$IMAGE_PUSHED"
+        echo "DOCKER_IMAGE_REPO=$DOCKER_IMAGE_REPO"
+        echo "DOCKER_IMAGE_TAG=$IMAGE_TAG"
+        echo "DOCKER_IMAGE_WITH_TAG=$DOCKER_IMAGE_WITH_TAG"
+        echo "DOCKER_IMAGE_DIGEST=$DIGEST"
+        echo "IMAGE_REF=$IMAGE_REF"
+        echo "CS_IMAGE=$IMAGE_REF"
       } > docker.env
+
   after_script:
     - docker logout "$CI_REGISTRY" || true
+
   artifacts:
     reports:
       dotenv: docker.env
     paths:
       - docker.env
     expire_in: 1 week
+
   rules:
     - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
       exists: [Dockerfile]
-    - if: $CI_COMMIT_BRANCH
-      exists: [Dockerfile]
     - if: $CI_COMMIT_TAG
+      exists: [Dockerfile]
+    - if: $CI_COMMIT_BRANCH
       exists: [Dockerfile]
