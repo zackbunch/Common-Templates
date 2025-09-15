@@ -8,7 +8,7 @@
   PACKAGE_NAME: ""                # e.g. "my-package"
   PACKAGE_VERSION: ""             # e.g. "0.0.1"
   PACKAGE_FILE: ""                # e.g. "my-package.zip"
-  GITLAB_URL: "https://gitlab.com"
+
 
 .fetch_generic_package:
   stage: fetch
