@@ -1,37 +1,36 @@
 variables:
-  DOCKER_TLS_CERTDIR: ""   # disable TLS for DinD
+  DOCKER_TLS_CERTDIR: ""
+  DOCKER_HOST: "tcp://docker:2375"
+  DOCKER_PRUNE: "false"        # set true on MR/feature if you want cleanup
+  PUSH_FEATURE_BRANCH: "false" # opt-in to push on non-default, non-MR
 
-# Reusable snippet for auth + shell hygiene
 .before_docker: &before_docker
   - set -euo pipefail
   - echo "$CI_JOB_TOKEN" | docker login -u gitlab-ci-token --password-stdin "$CI_REGISTRY"
 
-
 .compute_meta: &compute_meta |
   set -euo pipefail
-  BASE_IMAGE_PATH="$CI_REGISTRY_IMAGE"
-  if [[ -n "${APP_NAME:-}" ]]; then
-    BASE_IMAGE_PATH="$BASE_IMAGE_PATH/$APP_NAME"
-  fi
 
+  # Canonical repo path (single registry path across all flows)
+  BASE_IMAGE_PATH="$CI_REGISTRY_IMAGE${APP_NAME:+/$APP_NAME}"
+
+  # Tag strategy
   if [[ -n "${CI_COMMIT_TAG:-}" ]]; then
-    BASE_IMAGE_PATH="$CI_REGISTRY_IMAGE/releases${APP_NAME:+/$APP_NAME}"
-    IMAGE_TAG="$CI_COMMIT_TAG"
+    IMAGE_TAG="${CI_COMMIT_TAG}"
   elif [[ -n "${CI_MERGE_REQUEST_IID:-}" ]]; then
     IMAGE_TAG="mr-${CI_MERGE_REQUEST_IID}-${CI_COMMIT_SHORT_SHA}"
   else
-    IMAGE_TAG="$CI_COMMIT_SHORT_SHA"
+    IMAGE_TAG="${CI_COMMIT_SHORT_SHA}"
   fi
 
-  IMAGE_TAG_LATEST="latest"
-  DOCKER_IMAGE_NAME_WITH_TAG="${BASE_IMAGE_PATH}:${IMAGE_TAG}"
-  DOCKER_IMAGE_LATEST="${BASE_IMAGE_PATH}:${IMAGE_TAG_LATEST}"
+  DOCKER_IMAGE_REPO="${BASE_IMAGE_PATH}"
+  DOCKER_IMAGE_WITH_TAG="${BASE_IMAGE_PATH}:${IMAGE_TAG}"
+  DOCKER_IMAGE_LATEST="${BASE_IMAGE_PATH}:latest"
 
 build:docker:
   image: docker:cli
   stage: build
-  services:
-    - docker:dind
+  services: [docker:dind]
   resource_group: "$CI_PROJECT_PATH:$CI_COMMIT_REF_SLUG"
   before_script:
     - *before_docker
@@ -39,48 +38,90 @@ build:docker:
   script:
     - |
       set -euo pipefail
-      docker build --pull -t "${DOCKER_IMAGE_NAME_WITH_TAG}" .
+
+      # Optional cache-from previous image (best-effort)
+      if docker pull "${DOCKER_IMAGE_LATEST}" >/dev/null 2>&1; then
+        CACHE_FROM="--cache-from=${DOCKER_IMAGE_LATEST}"
+      else
+        CACHE_FROM=""
+      fi
+
+      docker build --pull ${CACHE_FROM} \
+        --label org.opencontainers.image.source="${CI_PROJECT_URL}" \
+        --label org.opencontainers.image.revision="${CI_COMMIT_SHA}" \
+        --label org.opencontainers.image.created="$(date -u +%FT%TZ)" \
+        -t "${DOCKER_IMAGE_WITH_TAG}" .
+
       IMAGE_PUSHED="false"
       DIGEST=""
-      SCAN_IMAGE_REF=""
-      if [[ "${CI_COMMIT_BRANCH:-}" = "${CI_DEFAULT_BRANCH}" || -n "${CI_COMMIT_TAG:-}" || "${CI_PIPELINE_SOURCE:-}" = "merge_request_event" || "${PUSH_FEATURE_BRANCH:-}" = "true" ]]; then
+      IMAGE_REF=""
+
+      # Decide if we push
+      if [[ "${CI_COMMIT_BRANCH:-}" = "${CI_DEFAULT_BRANCH}" \
+            || -n "${CI_COMMIT_TAG:-}" \
+            || "${CI_PIPELINE_SOURCE:-}" = "merge_request_event" \
+            || "${PUSH_FEATURE_BRANCH:-}" = "true" ]]; then
         IMAGE_PUSHED="true"
-        echo "Pushing image ${DOCKER_IMAGE_NAME_WITH_TAG}"
-        docker push "${DOCKER_IMAGE_NAME_WITH_TAG}"
-        # Inspect digest of pushed image
-        docker pull "${DOCKER_IMAGE_NAME_WITH_TAG}"
-        DIGEST="$(docker inspect --format='{{index .RepoDigests 0}}' "${DOCKER_IMAGE_NAME_WITH_TAG}" | cut -d'@' -f2)"
-        SCAN_IMAGE_REF="${BASE_IMAGE_PATH}@${DIGEST}"
-        # Handle latest only for default branch and tags
-        if [[ "${CI_COMMIT_BRANCH:-}" = "${CI_DEFAULT_BRANCH}" || -n "${CI_COMMIT_TAG:-}" ]]; then
-          docker tag "${DOCKER_IMAGE_NAME_WITH_TAG}" "${DOCKER_IMAGE_LATEST}"
-          docker push "${DOCKER_IMAGE_LATEST}"
+        echo "Pushing ${DOCKER_IMAGE_WITH_TAG}"
+        # Flaky networks, give it a couple retries
+        for i in 1 2 3; do docker push "${DOCKER_IMAGE_WITH_TAG}" && break || sleep $((i*2)); done
+
+        # Ensure digest is populated (pull to sync RepoDigests if needed)
+        docker pull "${DOCKER_IMAGE_WITH_TAG}" >/dev/null 2>&1 || true
+        DIGEST="$(docker inspect --format='{{index .RepoDigests 0}}' "${DOCKER_IMAGE_WITH_TAG}" | cut -d'@' -f2 || true)"
+        if [[ -n "${DIGEST}" ]]; then
+          IMAGE_REF="${DOCKER_IMAGE_REPO}@${DIGEST}"
+        fi
+
+        # Push 'latest' only for default branch (optional: include tags if you like)
+        if [[ "${CI_COMMIT_BRANCH:-}" = "${CI_DEFAULT_BRANCH}" ]]; then
+          docker tag "${DOCKER_IMAGE_WITH_TAG}" "${DOCKER_IMAGE_LATEST}"
+          for i in 1 2 3; do docker push "${DOCKER_IMAGE_LATEST}" && break || sleep $((i*2)); done
         fi
       else
-        echo "Skipping image push."
+        echo "Skipping push (not default/tag/MR and PUSH_FEATURE_BRANCH!=true)."
       fi
-      # Emit dotenv for downstream
+
+      # Emit dotenv for downstream consumers
       {
         echo "DOCKER_IMAGE_PUSHED=${IMAGE_PUSHED}"
-        echo "DOCKER_IMAGE_NAME=${DOCKER_IMAGE_NAME_WITH_TAG}"
+        echo "DOCKER_IMAGE_REPO=${DOCKER_IMAGE_REPO}"
         echo "DOCKER_IMAGE_TAG=${IMAGE_TAG}"
-        echo "DOCKER_BASE_IMAGE_PATH=${BASE_IMAGE_PATH}"
+        echo "DOCKER_IMAGE_WITH_TAG=${DOCKER_IMAGE_WITH_TAG}"
         echo "DOCKER_IMAGE_DIGEST=${DIGEST}"
-        echo "IMAGE_REF=${SCAN_IMAGE_REF}"
-        echo "CS_IMAGE=${SCAN_IMAGE_REF}"
+        echo "IMAGE_REF=${IMAGE_REF}"
+        echo "CS_IMAGE=${IMAGE_REF}"   # scanner-friendly
       } > docker.env
+
   after_script:
-    - docker logout "$CI_REGISTRY" || true
+    - |
+      if [[ "${DOCKER_PRUNE}" = "true" ]]; then
+        docker system prune -af || true
+        docker logout "$CI_REGISTRY" || true
+      else
+        docker logout "$CI_REGISTRY" || true
+      fi
+
   artifacts:
-    reports:
-      dotenv: docker.env
-    paths:
-      - docker.env
+    reports: { dotenv: docker.env }
+    paths: [docker.env]
     expire_in: 1 week
+
   rules:
+    # Merge requests: run always if Dockerfile exists
     - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
       exists: [Dockerfile]
-    - if: $CI_COMMIT_BRANCH
-      exists: [Dockerfile]
+      when: on_success
+
+    # Tags: run if Dockerfile exists
     - if: $CI_COMMIT_TAG
       exists: [Dockerfile]
+      when: on_success
+
+    # Branch pushes (including default): run if Dockerfile exists
+    - if: $CI_COMMIT_BRANCH
+      exists: [Dockerfile]
+      when: on_success
+
+    # Fallback
+    - when: never
