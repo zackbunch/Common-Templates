@@ -250,6 +250,23 @@ workflow:
 # -------------------------------------------------------------------
 .rule:scan-on-mr-or-manual:
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME =~ /^(dev|test|int|prod|main|master)$/'
+    # Run automatically on merge requests
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
       when: on_success
-    - when: manual
+
+    # Manual trigger on feature branches
+    - if: $CI_COMMIT_BRANCH =~ /^gmarm-.*$/
+      when: manual
+      allow_failure: true
+
+    # Manual trigger on default branch
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: manual
+      allow_failure: true
+
+    - when: never
+
+.rule:scheduled-nightly:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+      when: on_success

@@ -1,32 +1,37 @@
+# Container Scanning (digest-aware, POSIX-sh safe)
 variables:
   CS_ANALYZER_IMAGE: "$CI_TEMPLATE_REGISTRY_HOST/security-products/container-scanning:8"
   CS_SCHEMA_MODEL: 15
 
 scan:container:
-  image: "$CS_ANALYZER_IMAGE$CS_IMAGE_SUFFIX"
+  image: "$CS_ANALYZER_IMAGE"
   stage: scan
   needs:
     - job: build:docker
       artifacts: true
       optional: true
-  allow_failure: true
+  allow_failure: true            # gate or not: flip to false if you want blocking
   variables:
     GIT_STRATEGY: none
     CS_REGISTRY: "$CI_REGISTRY"
-    CS_REGISTRY_USER: "$CI_REGISTRY_USER"
-    CS_REGISTRY_PASSWORD: "$CI_JOB_TOKEN"
+    CS_REGISTRY_USER: "$CI_REGISTRY_USER"     # analyzer will auth to pull
+    CS_REGISTRY_PASSWORD: "$CI_JOB_TOKEN"     # with gitlab-ci-token
     CS_SCHEMA_MODEL: 15
-    # CS_SEVERITY_THRESHOLD: "low"
+    # CS_SEVERITY_THRESHOLD: "low"            # uncomment to gate by severity
   before_script:
-    - set -euo pipefail 2>/dev/null || set -eu
+    - set -eu
     - |
+      # Require IMAGE_REF from build (repo@sha256:...)
       if [ -z "${IMAGE_REF:-}" ] || [ "${IMAGE_REF}" = "skipped" ]; then
-        echo "No IMAGE_REF — exit 0"; exit 0
+        echo "No IMAGE_REF provided by build:docker; skipping scan."
+        exit 0
       fi
       export CS_IMAGE="${IMAGE_REF}"
-      export DOCKER_IMAGE_NAME="${DOCKER_IMAGE_NAME}"
-      echo "Full Image Path to be scanned ${DOCKER_IMAGE_NAME}"
-      echo "Scanning Image using Digest ${CS_IMAGE}"
+      # Optional: show the human tag ref if present
+      if [ -n "${DOCKER_IMAGE_WITH_TAG:-}" ]; then
+        echo "Scanning image: ${DOCKER_IMAGE_WITH_TAG}"
+      fi
+      echo "Using digest ref: ${CS_IMAGE}"
   script:
     - gtcs scan
   rules: !reference [.rule:scan-on-mr-or-manual, rules]
@@ -38,5 +43,3 @@ scan:container:
     paths:
       - gl-container-scanning-report.json
       - "**/gl-sbom-*.cdx.json"
-
-

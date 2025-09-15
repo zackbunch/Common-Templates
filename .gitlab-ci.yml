@@ -29,5 +29,5 @@ default:
   interruptible: true  # optional: cancels superseded jobs on new pipelines
 
 variables:
-  APP_NAME: syactemplate
-  PUSH_FEATURE_BRANCH: "false"
+  APP_NAME: syactemplates
+  PUSH_FEATURE_BRANCH: "true"
