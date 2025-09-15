@@ -31,7 +31,7 @@ default:
 
 variables:
   APP_NAME: syactemplates
-  PUSH_FEATURE_BRANCH: "true"
+  PUSH_FEATURE_BRANCH: "false"
 
 
 # fetch:my-package:
