@@ -1,34 +1,28 @@
-# ---- Docker-in-Docker build template (DinD, POSIX-safe) ----
-# Works on shared runners when privileged is enabled.
+# Minimal Docker build/push job for privileged runners (DinD)
+# Opinionated defaults: single registry path, clean dotenv, push on default/tag/MR.
 
 variables:
   DOCKER_TLS_CERTDIR: ""                 # disable TLS for DinD
-  DOCKER_HOST: "tcp://docker:2375"       # talk to the DinD service
-  DOCKER_PRUNE: "false"                  # optional: set true on MR/feature branches
-  PUSH_FEATURE_BRANCH: "false"           # opt-in push on non-default, non-MR branches
+  # DOCKER_HOST: "tcp://docker:2375"       # talk to DinD
+  PUSH_FEATURE_BRANCH: "false"           # set true to push from non-default, non-MR branches
 
-# Lightweight auth + shell hygiene (POSIX sh)
 .before_docker: &before_docker
-  - set -eu
+  - set -euo pipefail
   - echo "$CI_JOB_TOKEN" | docker login -u gitlab-ci-token --password-stdin "$CI_REGISTRY"
 
-# Compute image coordinates — single canonical registry path
 .compute_meta: &compute_meta |
-  set -eu
-
-  # Canonical repo path (no path flips on tags)
+  set -euo pipefail
   BASE_IMAGE_PATH="$CI_REGISTRY_IMAGE"
-  if [ -n "${APP_NAME:-}" ]; then
+  if [[ -n "${APP_NAME:-}" ]]; then
     BASE_IMAGE_PATH="$BASE_IMAGE_PATH/$APP_NAME"
   fi
 
-  # Tag strategy
-  if [ -n "${CI_COMMIT_TAG:-}" ]; then
+  if [[ -n "${CI_COMMIT_TAG:-}" ]]; then
     IMAGE_TAG="$CI_COMMIT_TAG"
-  elif [ -n "${CI_MERGE_REQUEST_IID:-}" ]; then
+  elif [[ -n "${CI_MERGE_REQUEST_IID:-}" ]]; then
     IMAGE_TAG="mr-${CI_MERGE_REQUEST_IID}-${CI_COMMIT_SHORT_SHA}"
   else
-    IMAGE_TAG="${CI_COMMIT_SHORT_SHA}"
+    IMAGE_TAG="$CI_COMMIT_SHORT_SHA"
   fi
 
   DOCKER_IMAGE_REPO="${BASE_IMAGE_PATH}"
@@ -41,80 +35,45 @@ build:docker:
   services:
     - name: docker:24-dind
       alias: docker
-      # Uncomment on k8s runners if MTU issues:
-      # command: ["--mtu=1460"]
   resource_group: "$CI_PROJECT_PATH:$CI_COMMIT_REF_SLUG"
 
   before_script:
-    - set -eu
-    # Wait for DinD socket to be ready
-    - |
-      set -eu
-      for i in $(seq 1 30); do
-        if docker version >/dev/null 2>&1; then
-          echo "DinD is up"; break
-        fi
-        echo "Waiting for DinD... ($i)"; sleep 2
-      done
     - *before_docker
     - *compute_meta
 
   script:
     - |
-      set -eu
+      set -euo pipefail
 
-      # Best-effort cache-from latest
-      CACHE_FROM=""
-      if docker pull "${DOCKER_IMAGE_LATEST}" >/dev/null 2>&1; then
-        CACHE_FROM="--cache-from=${DOCKER_IMAGE_LATEST}"
-      fi
-
-      # Build with traceable OCI labels
-      docker build --pull ${CACHE_FROM} \
-        --label org.opencontainers.image.source="${CI_PROJECT_URL}" \
-        --label org.opencontainers.image.revision="${CI_COMMIT_SHA}" \
-        --label org.opencontainers.image.created="$(date -u +%FT%TZ)" \
+      docker build --pull \
         -t "${DOCKER_IMAGE_WITH_TAG}" .
 
       IMAGE_PUSHED="false"
       DIGEST=""
       IMAGE_REF=""
 
-      # Decide if we push
-      SHOULD_PUSH="false"
-      if [ "${CI_PIPELINE_SOURCE:-}" = "merge_request_event" ]; then
-        SHOULD_PUSH="true"
-      fi
-      if [ -n "${CI_COMMIT_TAG:-}" ]; then
-        SHOULD_PUSH="true"
-      fi
-      if [ -n "${CI_COMMIT_BRANCH:-}" ] && [ "${CI_COMMIT_BRANCH}" = "${CI_DEFAULT_BRANCH}" ]; then
-        SHOULD_PUSH="true"
-      fi
-      if [ "${PUSH_FEATURE_BRANCH:-false}" = "true" ]; then
-        SHOULD_PUSH="true"
-      fi
-
-      if [ "${SHOULD_PUSH}" = "true" ]; then
+      # Push for default branch, tags, MRs, or opt-in feature branches
+      if [[ "${CI_PIPELINE_SOURCE:-}" == "merge_request_event" \
+            || -n "${CI_COMMIT_TAG:-}" \
+            || ( -n "${CI_COMMIT_BRANCH:-}" && "${CI_COMMIT_BRANCH}" == "${CI_DEFAULT_BRANCH}" ) \
+            || "${PUSH_FEATURE_BRANCH:-}" == "true" ]]; then
         IMAGE_PUSHED="true"
-        echo "Pushing ${DOCKER_IMAGE_WITH_TAG}"
-        # Retry a few times to deflake networks
-        n=0; until [ $n -ge 3 ]; do docker push "${DOCKER_IMAGE_WITH_TAG}" && break; n=$((n+1)); sleep $((2*n)); done
+        docker push "${DOCKER_IMAGE_WITH_TAG}"
 
-        # Ensure RepoDigests is populated
+        # Normalize digest for downstream (repo@sha256:...)
         docker pull "${DOCKER_IMAGE_WITH_TAG}" >/dev/null 2>&1 || true
         DIGEST="$(docker inspect --format='{{index .RepoDigests 0}}' "${DOCKER_IMAGE_WITH_TAG}" | cut -d'@' -f2 || true)"
-        if [ -n "${DIGEST}" ]; then
+        if [[ -n "${DIGEST}" ]]; then
           IMAGE_REF="${DOCKER_IMAGE_REPO}@${DIGEST}"
         fi
 
-        # Push 'latest' only for default branch
-        if [ -n "${CI_COMMIT_BRANCH:-}" ] && [ "${CI_COMMIT_BRANCH}" = "${CI_DEFAULT_BRANCH}" ]; then
+        # Push 'latest' only on default branch
+        if [[ -n "${CI_COMMIT_BRANCH:-}" && "${CI_COMMIT_BRANCH}" == "${CI_DEFAULT_BRANCH}" ]]; then
           docker tag "${DOCKER_IMAGE_WITH_TAG}" "${DOCKER_IMAGE_LATEST}"
-          n=0; until [ $n -ge 3 ]; do docker push "${DOCKER_IMAGE_LATEST}" && break; n=$((n+1)); sleep $((2*n)); done
+          docker push "${DOCKER_IMAGE_LATEST}"
         fi
       else
-        echo "Skipping push (not default/tag/MR and PUSH_FEATURE_BRANCH!=true)."
+        echo "Skipping push."
       fi
 
       # Emit dotenv for downstream jobs
@@ -129,12 +88,7 @@ build:docker:
       } > docker.env
 
   after_script:
-    - |
-      set -eu
-      if [ "${DOCKER_PRUNE:-false}" = "true" ]; then
-        docker system prune -af || true
-      fi
-      docker logout "$CI_REGISTRY" || true
+    - docker logout "$CI_REGISTRY" || true
 
   artifacts:
     reports:
@@ -144,19 +98,9 @@ build:docker:
     expire_in: 1 week
 
   rules:
-    # Merge requests: run if Dockerfile exists
     - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
       exists: [Dockerfile]
-      when: on_success
-
-    # Tags: run if Dockerfile exists
     - if: $CI_COMMIT_TAG
       exists: [Dockerfile]
-      when: on_success
-
-    # Branch pushes (including default): run if Dockerfile exists
     - if: $CI_COMMIT_BRANCH
       exists: [Dockerfile]
-      when: on_success
-
-    - when: never
