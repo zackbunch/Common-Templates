@@ -33,7 +33,7 @@ scan:container:
       fi
       echo "Using digest ref: ${CS_IMAGE}"
   script:
-    - /analyzer run
+    - gtcs scan
   rules: !reference [.rule:scan-on-mr-or-manual, rules]
   artifacts:
     access: developer
