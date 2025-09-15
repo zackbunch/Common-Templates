@@ -4,7 +4,7 @@
 
 .variables: &fetch_vars
   # REQUIRED: Either numeric project ID or URL-encoded path (e.g. group%2Fproject)
-  PACKAGE_PROJECT_ID: ""          # e.g. "123456" OR "group%2Fproject"
+  PACKAGE_PROJECT_ID: $CI_PROJECT_ID          # e.g. "123456" OR "group%2Fproject"
   PACKAGE_NAME: ""                # e.g. "my-package"
   PACKAGE_VERSION: ""             # e.g. "0.0.1"
   PACKAGE_FILE: ""                # e.g. "my-package.zip"

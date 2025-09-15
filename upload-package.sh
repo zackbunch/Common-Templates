@@ -1,12 +1,12 @@
 #!/bin/bash
 # A script to upload a generic package to the GitLab Package Registry.
 # It handles authentication for both CI/CD pipelines and local development.
-
+# https://gitlab.simulogix.com/api/v4/projects/123456/packages/generic/my-package/0.0.1/my-package.zip
 set -euo pipefail
 
 # --- CONFIGURATION: Please edit these variables ---
 # Your GitLab project ID. Find it on your project's homepage.
-PROJECT_ID="YOUR_PROJECT_ID"
+PROJECT_ID="73"
 # The desired name for your package in the registry.
 PACKAGE_NAME="my-package"
 # The desired version for the package.
