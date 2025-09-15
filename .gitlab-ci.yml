@@ -37,7 +37,7 @@ variables:
 fetch:my-package:
   extends: .fetch_generic_package
   variables:
-    PACKAGE_NAME: "my-package"
+    PACKAGE_NAME: "sqlcl"
     PACKAGE_VERSION: "0.0.1"
-    PACKAGE_FILE: "my-package.zip"
+    PACKAGE_FILE: "sqlcl.tar.gz"
 

@@ -8,13 +8,13 @@ set -euo pipefail
 # Your GitLab project ID. Find it on your project's homepage.
 PROJECT_ID="73"
 # The desired name for your package in the registry.
-PACKAGE_NAME="my-package"
+PACKAGE_NAME="sqlcl"
 # The desired version for the package.
 PACKAGE_VERSION="0.0.1"
 # The local path to the file you want to upload.
-FILE_TO_UPLOAD="my-package.zip"
+FILE_TO_UPLOAD="sqlcl.tar.gz"
 # Your GitLab instance URL (e.g., https://gitlab.com)
-GITLAB_URL="https://gitlab.com"
+GITLAB_URL="https://gitlab.simulogix.com"
 # --- END OF CONFIGURATION ---
 
 # Check if the file to upload actually exists
