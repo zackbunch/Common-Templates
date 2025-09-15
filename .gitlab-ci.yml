@@ -30,4 +30,4 @@ default:
 
 variables:
   APP_NAME: syactemplate
-  PUSH_FEATURE_BRANCH: "false"
+  PUSH_FEATURE_BRANCH: "true"
