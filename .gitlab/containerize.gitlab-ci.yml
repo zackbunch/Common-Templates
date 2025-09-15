@@ -49,6 +49,9 @@ build:docker:
       --build-arg CI_JOB_TOKEN=$CI_JOB_TOKEN \
       --build-arg CI_API_V4_URL=$CI_API_V4_URL \
       --build-arg CI_PROJECT_ID=$CI_PROJECT_ID \
+      --build-arg PACKAGE_NAME=$PACKAGE_NAME \
+      --build-arg PACKAGE_VERSION=$PACKAGE_VERSION \
+      --build-arg PACKAGE_FILE=$PACKAGE_FILE \
       -t "$DOCKER_IMAGE_WITH_TAG" .
 
       IMAGE_PUSHED="false"
