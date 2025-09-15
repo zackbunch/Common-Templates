@@ -2,13 +2,14 @@
 
 include:
   - local: /.gitlab/containerize.gitlab-ci.yml
+  - local: /.gitlab/fetch-generic.gitlab-ci.yml
   - local: /.gitlab/job-rules.gitlab-ci.yml
   - local: /.gitlab/container-scan.gitlab-ci.yml
   - local: /.gitlab/secrets.gitlab-ci.yml
   - local: /.gitlab/promote.gitlab-ci.yml
   - local: /.gitlab/release.gitlab-ci.yml
 
-stages: [build, scan, promote, release]
+stages: [fetch, build, scan, promote, release]
 
 workflow:
   rules:
@@ -31,3 +32,13 @@ default:
 variables:
   APP_NAME: syactemplates
   PUSH_FEATURE_BRANCH: "true"
+
+
+fetch:my-package:
+  extends: .fetch_generic_package
+  variables:
+    PACKAGE_PROJECT_ID: "123456"           # or "group%2Fsubgroup%2Fproject"
+    PACKAGE_NAME: "my-package"
+    PACKAGE_VERSION: "0.0.1"
+    PACKAGE_FILE: "my-package.zip"
+
