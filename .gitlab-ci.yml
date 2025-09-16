@@ -29,7 +29,7 @@ default:
   interruptible: true
 
 variables:
-  # APP_NAME: syactemplate
+  APP_NAME: zack
   PUSH_FEATURE_BRANCH: "true"
 
 
