@@ -4,6 +4,7 @@ variables:
   DOCKER_TLS_CERTDIR: ""                 # disable TLS for DinD
   # DOCKER_HOST: "tcp://docker:2375"       # talk to DinD
   PUSH_FEATURE_BRANCH: "false"           # set true to push from non-default, non-MR branches
+  DOCKER_BUILDKIT: "1"
 
 .before_docker: &before_docker
   - set -eu
