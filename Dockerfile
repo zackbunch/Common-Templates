@@ -1,7 +1,6 @@
 # Use an official Python base image (alpine is smaller, slim is safer for prod)
 FROM ubuntu:jammy AS builder
 
-# Declare ARGs to make them available in the build stage
 ARG CI_REGISTRY
 ARG CI_API_V4_URL
 ARG CI_PROJECT_ID
