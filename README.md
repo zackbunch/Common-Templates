@@ -1,90 +1,68 @@
-# GitLab CI/CD Pipeline Templates
+# Containerize Template (Docker + BuildKit + GitLab Registry)
 
-This repository contains a set of reusable GitLab CI/CD pipeline templates for containerized applications.
+Opinionated, minimal Docker build/push job for privileged runners (DinD). Designed for reproducible builds, safe secret usage, and digest-first deployments.
 
-## Features
+## What You Get
 
-*   Builds Docker images from a `Dockerfile`.
-*   Scans container images for vulnerabilities using Trivy.
-*   Promotes images to different environments.
-*   Deploys applications to OpenShift.
-*   Creates GitLab releases for tagged commits.
+- **Deterministic tagging**:
+  - `TAG` build → `:tag`
+  - `MR` build → `mr-<iid>-<shortsha>`
+  - `Branch` build → `<shortsha>`
+- **Push policy**:
+  - Push on tags, default branch, MRs, or set `PUSH_FEATURE_BRANCH="true"`.
+- **OCI labels** baked in:
+  - `org.opencontainers.image.{created,source,revision,version,ref.name,vendor}`
+- **Digest capture**:
+  - Emits `IMAGE_REF=registry/path@sha256:...` for immutable deploys.
+- **Dotenv artifact**:
+  - `docker.env` exported as CI artifact for downstream jobs.
 
-## How it Works
+## Requirements
 
-The main `.gitlab-ci.yml` file acts as an entry point and includes the individual template files from the `.gitlab/` directory. The pipeline is broken down into the following stages:
+- **Runner**: privileged Docker-in-Docker (DinD).
+- **Services**: `docker:24-dind`.
+- **Image**: `docker:24-cli` (or newer).
+- **BuildKit**: `DOCKER_BUILDKIT=1` (already set).
+- **Registry**: GitLab project/container registry enabled.
 
-*   **build:** Builds a Docker image.
-*   **scan:** Scans the Docker image for vulnerabilities.
-*   **promote:** Tags and pushes an image to a new environment-specific tag.
-*   **release:** Creates a GitLab release.
+## Inputs (Variables)
 
-### Templates
+| Name                  | Required | Default     | Purpose                                                |
+|-----------------------|----------|-------------|--------------------------------------------------------|
+| `APP_NAME`            | no       | _empty_     | Optional subpath under `$CI_REGISTRY_IMAGE`.           |
+| `PUSH_FEATURE_BRANCH` | no       | `false`     | Push from feature branches if `true`.                  |
+| `CI_API_V4_URL`       | yes      | GitLab CI   | API base; auto-set in GitLab CI.                       |
+| `CI_PROJECT_ID`       | yes      | GitLab CI   | Project ID; auto-set in GitLab CI.                     |
 
-*   `.gitlab/containerize.gitlab-ci.yml`: Defines the `build:docker` job, which builds and pushes a Docker image to the GitLab container registry.
-*   `.gitlab/container-scan.gitlab-ci.yml`: Defines the `container_scanning` job, which scans the Docker image for vulnerabilities.
-*   `.gitlab/promote.gitlab-ci.yml`: Defines the `.promote` job for promoting images.
-*   `.gitlab/deploy.gitlab-ci.yml`: Defines a `.openshift-deploy` template for deploying to OpenShift. This is not a complete job and needs to be extended in your project.
-*   `.gitlab/release.gitlab-ci.yml`: Defines the `release:dev` job, which creates a GitLab release when a tag is pushed.
-*   `.gitlab/job-rules.gitlab-ci.yml`: Contains common rules for when jobs should run.
-*   `.gitlab/secrets.gitlab-ci.yml`: (Not shown, but likely for managing secrets)
+> If your **Dockerfile** downloads from the GitLab Package Registry using the CI token:
+> - Use BuildKit secret in the build: `--secret id=gitlab_token,env=CI_JOB_TOKEN`.
+> - In the Dockerfile: `RUN --mount=type=secret,id=gitlab_token ...`
 
-## Containerize
+## Outputs (docker.env)
 
-The `.gitlab/containerize.gitlab-ci.yml` template is responsible for building and pushing Docker images. The `build:docker` job uses the following image tagging strategy:
+- `DOCKER_IMAGE_PUSHED` – `true|false`
+- `DOCKER_IMAGE_REPO` – `registry/group/project[/app_name]`
+- `DOCKER_IMAGE_TAG` – `tag | mr-<iid>-<sha> | <sha>`
+- `DOCKER_IMAGE_WITH_TAG` – `registry/path:tag`
+- `DOCKER_IMAGE_DIGEST` – `sha256:...`
+- `IMAGE_REF` / `CS_IMAGE` – `registry/path@sha256:...`
 
-*   **Merge Requests:** `mr-<iid>-<sha>`
-*   **Branches:** `<sha>`
-*   **Tags:** `<tag>`
-*   The `latest` tag is also applied for the default branch and for tags.
+Use `IMAGE_REF` for deployments (immutable, content-addressed).
 
-The `build:docker` job produces a `docker.env` artifact with the following variables:
+## How to Include
 
-| Variable                | Description                                         |
-| ----------------------- | --------------------------------------------------- |
-| `DOCKER_IMAGE_PUSHED`   | `true` or `false` depending on whether the image was pushed. |
-| `DOCKER_IMAGE_NAME`     | The full name of the Docker image with tag.         |
-| `DOCKER_IMAGE_TAG`      | The tag of the Docker image.                        |
-| `DOCKER_BASE_IMAGE_PATH`| The base path of the Docker image in the registry.  |
-| `DOCKER_IMAGE_DIGEST`   | The digest of the pushed Docker image.              |
-| `IMAGE_REF`             | The full image reference with digest.               |
-| `CS_IMAGE`              | The image reference to be used by the scanner.      |
+### A) Inline in the same repo
+Place the job in your repo’s `.gitlab-ci.yml`. Done.
 
-## Promotions
-
-The `.gitlab/promote.gitlab-ci.yml` template is used to "promote" images by re-tagging them for different environments. This is useful for creating a clear distinction between images that are in development, staging, or production.
-
-The `promote:dev` job is provided as an example. It extends the `.promote` job and sets the `TARGET_ENV` to `dev`. This job will only run on tag pipelines.
-
-When the `promote:dev` job runs, it will pull the image built in the `build:docker` job, tag it with a `dev-<tag>` tag, and push it to the registry. For example, if the tag is `1.2.3`, the promoted image will be tagged `dev-1.2.3`.
-
-The `promote` jobs produce a `promote.env` artifact with the following variables:
-
-| Variable                  | Description                                                     |
-| ------------------------- | --------------------------------------------------------------- |
-| `<TARGET_ENV>_IMAGE_REF`  | The full image reference with digest for the promoted image.    |
-| `<TARGET_ENV>_IMAGE_TAG_VER` | The full image name with the new environment-specific tag. |
-
-## How to Use
-
-To use these templates in your own project, you can include them in your `.gitlab-ci.yml` file.
+### B) Reuse from a central project
+In your service repo:
 
 ```yaml
 include:
-  - project: 'path/to/this/project'
-    ref: 'main'
-    file: '/.gitlab-ci.yml'
-```
+  - project: infra/ci-templates
+    ref: main
+    file: /containerize.gitlab-ci.yml
 
-### Variables
-
-You can customize the behavior of the pipelines by overriding the following variables in your project's `.gitlab-ci.yml` file:
-
-| Variable              | Description                                                                 | Default Value  |
-| --------------------- | --------------------------------------------------------------------------- | -------------- |
-| `APP_NAME`            | The name of your application. Used for naming Docker images and deployments. | `syactemplate` |
-| `PUSH_FEATURE_BRANCH` | Set to `"true"` to push Docker images for feature branches.                 | `"false"`      |
-| `DOCKER_TLS_CERTDIR`  | Set to `""` to disable TLS for Docker-in-Docker.                            | `""`           |
-| `TARGET_ENV`          | The target environment for promotion (e.g., `dev`, `staging`, `prod`).      |                |
-
-**Note:** For deployment, you will need to create a job that extends the `.openshift-deploy` template and provide the necessary OpenShift credentials and configuration.
+variables:
+  APP_NAME: my-service
+  PUSH_FEATURE_BRANCH: "false"
