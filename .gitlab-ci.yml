@@ -8,7 +8,7 @@ include:
   - local: /.gitlab/promote.gitlab-ci.yml
   - local: /.gitlab/release.gitlab-ci.yml
 
-stages: [build, scan, promote, release]
+stages: [build, scan, render, promote, release]
 
 workflow:
   rules:
@@ -28,7 +28,7 @@ variables:
 
 render:helm:
   image: alpine:3.20
-  stage: test
+  stage: render
   needs: ["build:docker"]
   dependencies: ["build:docker"]
   rules:
