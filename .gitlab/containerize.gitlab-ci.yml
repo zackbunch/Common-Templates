@@ -48,12 +48,6 @@ build:docker:
       --build-arg CI_REGISTRY=$CI_REGISTRY \
       --build-arg CI_API_V4_URL=$CI_API_V4_URL \
       --build-arg CI_PROJECT_ID=$CI_PROJECT_ID \
-      --label "org.opencontainers.image.created=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
-      --label "org.opencontainers.image.source=$CI_PROJECT_URL" \
-      --label "org.opencontainers.image.revision=$CI_COMMIT_SHA" \
-      --label "org.opencontainers.image.version=$IMAGE_TAG" \
-      --label "org.opencontainers.image.ref.name=$CI_COMMIT_REF_NAME" \
-      --label "org.opencontainers.image.vendor=zackbunch" \ 
       -t "$DOCKER_IMAGE_WITH_TAG" .
 
     IMAGE_PUSHED="false"
