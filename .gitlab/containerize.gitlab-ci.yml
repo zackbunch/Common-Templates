@@ -42,6 +42,7 @@ build:docker:
 
   script: |
     set -eu
+    BUILD_DATE="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 
     docker build --pull \
       --secret id=gitlab_token,env=CI_JOB_TOKEN \
@@ -59,7 +60,6 @@ build:docker:
     IMAGE_PUSHED="false"
     DIGEST=""
     IMAGE_REF=""
-    BUILD_DATE="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 
     # Push policy
     SHOULD_PUSH="false"
