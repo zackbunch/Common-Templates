@@ -18,4 +18,3 @@ RUN --mount=type=secret,id=gitlab_token \
     curl -sSL --header "JOB-TOKEN: $TOKEN" \
       "$CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/generic/sqlcl/0.0.1/sqlcl.tar.gz" 
 
-COPY sqlcl.tar.gz /tmp/sqlcl.tar.gz
