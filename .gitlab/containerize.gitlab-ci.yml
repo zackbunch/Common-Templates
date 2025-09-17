@@ -48,8 +48,8 @@ build:docker:
       set -eu
 
       docker build --pull \
+      --secret id=gitlab_token,env=CI_JOB_TOKEN \
       --build-arg CI_REGISTRY=$CI_REGISTRY \
-      --build-arg CI_JOB_TOKEN=$CI_JOB_TOKEN \
       --build-arg CI_API_V4_URL=$CI_API_V4_URL \
       --build-arg CI_PROJECT_ID=$CI_PROJECT_ID \
       -t "$DOCKER_IMAGE_WITH_TAG" .
