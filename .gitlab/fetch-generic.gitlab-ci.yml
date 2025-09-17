@@ -1,0 +1,73 @@
+# .fetch-generic-package.gitlab-ci.yml
+# Opinionated, POSIX-sh safe, wget-first (curl fallback).
+# Produces the downloaded file as an artifact for downstream jobs.
+
+.variables: &fetch_vars
+  # REQUIRED: Either numeric project ID or URL-encoded path (e.g. group%2Fproject)
+  PACKAGE_PROJECT_ID: $CI_PROJECT_ID          # e.g. "123456" OR "group%2Fproject"
+  PACKAGE_NAME: ""                # e.g. "my-package"
+  PACKAGE_VERSION: ""             # e.g. "0.0.1"
+  PACKAGE_FILE: ""                # e.g. "my-package.zip"
+
+
+.fetch_generic_package:
+  stage: fetch
+  image: alpine:3.20
+  variables:
+    <<: *fetch_vars
+  rules:
+    # Run only if all required vars are set (prevents accidental empty fetches)
+    - if: '$PACKAGE_PROJECT_ID != "" && $PACKAGE_NAME != "" && $PACKAGE_VERSION != "" && $PACKAGE_FILE != ""'
+    - when: never
+  before_script:
+    - set -euo pipefail
+    - apk add --no-cache ca-certificates wget curl >/dev/null
+    - |
+      # Build the registry URL
+      PACKAGE_REGISTRY_URL="${CI_API_V4_URL}/projects/${PACKAGE_PROJECT_ID}/packages/generic/${PACKAGE_NAME}/${PACKAGE_VERSION}/${PACKAGE_FILE}"
+      echo "Package URL: ${PACKAGE_REGISTRY_URL}"
+
+      # Resolve auth header: CI first, local dev second
+      if [ -n "${CI_JOB_TOKEN:-}" ]; then
+        echo "Auth: CI_JOB_TOKEN"
+        AUTH_HEADER="JOB-TOKEN: ${CI_JOB_TOKEN}"
+      elif [ -n "${GITLAB_PAT:-}" ]; then
+        echo "Auth: PRIVATE-TOKEN"
+        AUTH_HEADER="PRIVATE-TOKEN: ${GITLAB_PAT}"
+      else
+        echo "ERROR: No auth. Provide CI_JOB_TOKEN in CI or GITLAB_PAT locally." >&2
+        exit 1
+      fi
+
+      # Export for script step
+      export PACKAGE_REGISTRY_URL AUTH_HEADER
+  script:
+    - |
+      set -euo pipefail
+
+      echo "Downloading: ${PACKAGE_FILE}"
+
+      # Prefer wget; fallback to curl if necessary
+      if command -v wget >/dev/null 2>&1; then
+        # --content-disposition is *not* used to avoid filename surprises
+        wget --header "${AUTH_HEADER}" -O "${PACKAGE_FILE}" "${PACKAGE_REGISTRY_URL}"
+      else
+        echo "wget missing; using curl fallback"
+        curl --fail --location --header "${AUTH_HEADER}" "${PACKAGE_REGISTRY_URL}" --output "${PACKAGE_FILE}"
+      fi
+
+      # Basic integrity check (non-empty file)
+      if [ ! -s "${PACKAGE_FILE}" ]; then
+        echo "ERROR: Downloaded file is empty or missing: ${PACKAGE_FILE}" >&2
+        exit 1
+      fi
+
+      echo "OK: ${PACKAGE_FILE} downloaded."
+  artifacts:
+    when: on_success
+    expire_in: 1 week
+    paths:
+      - ${PACKAGE_FILE}
+  # Give teams a predictable job name when extended
+  allow_failure: false
+  timeout: 10m
