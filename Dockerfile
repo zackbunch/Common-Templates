@@ -18,7 +18,6 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
 RUN --mount=type=secret,id=gitlab_token \
-    set -euo pipefail; \
     TOKEN="$(cat /run/secrets/gitlab_token)"; \
     curl -fsSL --header "JOB-TOKEN: ${TOKEN}" \
       "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/${PKG_NAME}/${PKG_VERSION}/${PKG_FILE}" \
