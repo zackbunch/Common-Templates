@@ -8,7 +8,7 @@ include:
   - local: /.gitlab/promote.gitlab-ci.yml
   - local: /.gitlab/release.gitlab-ci.yml
 
-stages: [build, scan, promote, release]
+stages: [build, scan, render, promote, release]
 
 workflow:
   rules:
@@ -26,4 +26,21 @@ variables:
   PUSH_FEATURE_BRANCH: "true"
 
 
-
+render:helm:
+  image: alpine:3.20
+  stage: render
+  needs: ["build:docker"]
+  dependencies: ["build:docker"]
+  rules:
+    - if: '$CI_COMMIT_BRANCH =~ /^(dev|test|int|prod)$/'
+  before_script:
+    - source docker.env
+    - apk add --no-cache helm
+  script:
+    - helm template myapp helm/myapp --set image.repository=$DOCKER_IMAGE_REPO --set image.digest=$DOCKER_IMAGE_DIGEST > rendered.yaml
+  artifacts:
+    paths:
+      - rendered.yaml
+  environment:
+    name: $CI_COMMIT_BRANCH
+    url: https://$CI_COMMIT_BRANCH.swf.local

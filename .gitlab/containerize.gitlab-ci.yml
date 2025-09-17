@@ -1,10 +1,40 @@
-# Minimal Docker build/push job for privileged runners (DinD, POSIX-sh safe)
-
+# -----------------------------------------------------------------------------
+# Containerize Template (DinD, BuildKit)
+#
+# What it does:
+# - Builds a Docker image with BuildKit + secrets
+# - Tags image deterministically (tag | MR | SHA)
+# - Push policy: default branch, tags, MRs, or opt-in feature branches
+# - Emits docker.env with digest-based IMAGE_REF for downstream jobs
+# - Adds OCI labels for traceability
+#
+# Requirements:
+# - Runner with privileged DinD (docker:24-dind service)
+# - $CI_REGISTRY, $CI_REGISTRY_IMAGE populated by GitLab
+# - BuildKit enabled (DOCKER_BUILDKIT=1)
+# - If Dockerfile uses `--mount=type=secret,id=gitlab_token`, we pass the CI_JOB_TOKEN
+#
+# Common overrides:
+# - APP_NAME: optional subpath under $CI_REGISTRY_IMAGE
+# - PUSH_FEATURE_BRANCH: "true" to push feature branches
+#
+# Outputs (docker.env):
+# - DOCKER_IMAGE_WITH_TAG: registry/path:tag
+# - IMAGE_REF: registry/path@sha256:...  (use for deploy)
+# - DOCKER_IMAGE_DIGEST: sha256:...
+#
+# Typical downstream usage:
+#   needs: ["build:docker"]
+#   artifacts: { reports: { dotenv: docker.env } }
+#   script: |
+#     set -eu
+#     echo "Deploying $IMAGE_REF"
+#     # helm upgrade --set image.digest="${DOCKER_IMAGE_DIGEST}" ...
+# -----------------------------------------------------------------------------
 variables:
   DOCKER_TLS_CERTDIR: ""                 # disable TLS for DinD
-  # DOCKER_HOST: "tcp://docker:2375"       # talk to DinD
-  PUSH_FEATURE_BRANCH: "false"           # set true to push from non-default, non-MR branches
   DOCKER_BUILDKIT: "1"
+  PUSH_FEATURE_BRANCH: "false"           # set true to push from non-default, non-MR branches
 
 .before_docker: &before_docker
   - set -eu
@@ -41,68 +71,71 @@ build:docker:
     - *before_docker
     - *compute_meta
 
+  script: |
+    set -eu
+    BUILD_DATE="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 
-
-  script:
-    - |
-      set -eu
-
-      docker build --pull \
+    docker build --pull \
       --secret id=gitlab_token,env=CI_JOB_TOKEN \
       --build-arg CI_REGISTRY=$CI_REGISTRY \
       --build-arg CI_API_V4_URL=$CI_API_V4_URL \
       --build-arg CI_PROJECT_ID=$CI_PROJECT_ID \
+      --label org.opencontainers.image.created=$BUILD_DATE \
+      --label org.opencontainers.image.source=$CI_PROJECT_URL \
+      --label org.opencontainers.image.revision=$CI_COMMIT_SHA \
+      --label org.opencontainers.image.version=$IMAGE_TAG \
+      --label org.opencontainers.image.ref.name=$CI_COMMIT_REF_NAME \
+      --label org.opencontainers.image.vendor=zackbunch \
       -t "$DOCKER_IMAGE_WITH_TAG" .
 
-      IMAGE_PUSHED="false"
-      DIGEST=""
-      IMAGE_REF=""
+    IMAGE_PUSHED="false"
+    DIGEST=""
+    IMAGE_REF=""
 
-      # Push policy: default branch, tag, MR, or opt-in feature
-      SHOULD_PUSH="false"
-      if [ "${CI_PIPELINE_SOURCE:-}" = "merge_request_event" ]; then
-        SHOULD_PUSH="true"
+    # Push policy
+    SHOULD_PUSH="false"
+    if [ "${CI_PIPELINE_SOURCE:-}" = "merge_request_event" ]; then
+      SHOULD_PUSH="true"
+    fi
+    if [ -n "${CI_COMMIT_TAG:-}" ]; then
+      SHOULD_PUSH="true"
+    fi
+    if [ -n "${CI_COMMIT_BRANCH:-}" ] && [ "$CI_COMMIT_BRANCH" = "$CI_DEFAULT_BRANCH" ]; then
+      SHOULD_PUSH="true"
+    fi
+    if [ "${PUSH_FEATURE_BRANCH:-false}" = "true" ]; then
+      SHOULD_PUSH="true"
+    fi
+
+    if [ "$SHOULD_PUSH" = "true" ]; then
+      IMAGE_PUSHED="true"
+      docker push "$DOCKER_IMAGE_WITH_TAG"
+
+      # Capture digest cleanly (no redundant pull)
+      if docker inspect "$DOCKER_IMAGE_WITH_TAG" >/dev/null 2>&1; then
+        DIGEST="$(docker inspect --format='{{index .RepoDigests 0}}' "$DOCKER_IMAGE_WITH_TAG" | cut -d'@' -f2)"
+        IMAGE_REF="$DOCKER_IMAGE_REPO@$DIGEST"
       fi
-      if [ -n "${CI_COMMIT_TAG:-}" ]; then
-        SHOULD_PUSH="true"
-      fi
+
+      # Push 'latest' only for default branch
       if [ -n "${CI_COMMIT_BRANCH:-}" ] && [ "$CI_COMMIT_BRANCH" = "$CI_DEFAULT_BRANCH" ]; then
-        SHOULD_PUSH="true"
+        docker tag "$DOCKER_IMAGE_WITH_TAG" "$DOCKER_IMAGE_LATEST"
+        docker push "$DOCKER_IMAGE_LATEST"
       fi
-      if [ "${PUSH_FEATURE_BRANCH:-false}" = "true" ]; then
-        SHOULD_PUSH="true"
-      fi
+    else
+      echo "Skipping push."
+    fi
 
-      if [ "$SHOULD_PUSH" = "true" ]; then
-        IMAGE_PUSHED="true"
-        docker push "$DOCKER_IMAGE_WITH_TAG"
-
-        # Capture digest
-        docker pull "$DOCKER_IMAGE_WITH_TAG" >/dev/null 2>&1 || true
-        DIGEST="$(docker inspect --format='{{index .RepoDigests 0}}' "$DOCKER_IMAGE_WITH_TAG" 2>/dev/null | cut -d'@' -f2 || true)"
-        if [ -n "$DIGEST" ]; then
-          IMAGE_REF="$DOCKER_IMAGE_REPO@$DIGEST"
-        fi
-
-        # Push 'latest' only for default branch
-        if [ -n "${CI_COMMIT_BRANCH:-}" ] && [ "$CI_COMMIT_BRANCH" = "$CI_DEFAULT_BRANCH" ]; then
-          docker tag "$DOCKER_IMAGE_WITH_TAG" "$DOCKER_IMAGE_LATEST"
-          docker push "$DOCKER_IMAGE_LATEST"
-        fi
-      else
-        echo "Skipping push."
-      fi
-
-      # Emit dotenv
-      {
-        echo "DOCKER_IMAGE_PUSHED=$IMAGE_PUSHED"
-        echo "DOCKER_IMAGE_REPO=$DOCKER_IMAGE_REPO"
-        echo "DOCKER_IMAGE_TAG=$IMAGE_TAG"
-        echo "DOCKER_IMAGE_WITH_TAG=$DOCKER_IMAGE_WITH_TAG"
-        echo "DOCKER_IMAGE_DIGEST=$DIGEST"
-        echo "IMAGE_REF=$IMAGE_REF"
-        echo "CS_IMAGE=$IMAGE_REF"
-      } > docker.env
+    # Emit dotenv
+    {
+      echo "DOCKER_IMAGE_PUSHED=$IMAGE_PUSHED"
+      echo "DOCKER_IMAGE_REPO=$DOCKER_IMAGE_REPO"
+      echo "DOCKER_IMAGE_TAG=$IMAGE_TAG"
+      echo "DOCKER_IMAGE_WITH_TAG=$DOCKER_IMAGE_WITH_TAG"
+      echo "DOCKER_IMAGE_DIGEST=$DIGEST"
+      echo "IMAGE_REF=$IMAGE_REF"
+      echo "CS_IMAGE=$IMAGE_REF"
+    } > docker.env
 
   after_script:
     - docker logout "$CI_REGISTRY" || true
@@ -112,7 +145,7 @@ build:docker:
       dotenv: docker.env
     paths:
       - docker.env
-    expire_in: 1 week
+    expire_in: 30 days
   retry:
     max: 2
     when:
