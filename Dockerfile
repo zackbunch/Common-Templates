@@ -3,7 +3,6 @@ FROM ubuntu:jammy AS builder
 
 # Declare ARGs to make them available in the build stage
 ARG CI_REGISTRY
-ARG CI_JOB_TOKEN
 ARG CI_API_V4_URL
 ARG CI_PROJECT_ID
 
