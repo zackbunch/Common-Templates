@@ -27,20 +27,29 @@ variables:
 
 
 render:helm:
-  image: alpine:3.20
+  image: alpine/helm:3
   stage: render
   needs: ["build:docker"]
   dependencies: ["build:docker"]
   rules:
     - if: '$CI_COMMIT_BRANCH =~ /^(dev|test|int|prod)$/'
+    - if: '$CI_COMMIT_TAG'   # run on tags too
   before_script:
+    - set -eu
     - source docker.env
-    - apk add --no-cache helm
-  script:
-    - helm template myapp helm/myapp --set image.repository=$DOCKER_IMAGE_REPO --set image.digest=$DOCKER_IMAGE_DIGEST > rendered.yaml
+    - CHART_DIR="${CHART_DIR:-helm/$CI_PROJECT_NAME}"
+  script: |
+    set -eu
+    helm template "$CI_PROJECT_NAME" "$CHART_DIR" \
+      --set image.repository="$DOCKER_IMAGE_REPO" \
+      --set image.digest="$DOCKER_IMAGE_DIGEST" \
+      --set image.tag="$DOCKER_IMAGE_TAG" \
+      > "rendered-${CI_PROJECT_NAME}-${CI_COMMIT_REF_NAME}.yaml"
+    echo "Rendered: rendered-${CI_PROJECT_NAME}-${CI_COMMIT_REF_NAME}.yaml"
   artifacts:
     paths:
-      - rendered.yaml
+      - rendered-*.yaml
+    expire_in: 30 days
   environment:
-    name: $CI_COMMIT_BRANCH
-    url: https://$CI_COMMIT_BRANCH.swf.local
+    name: $CI_COMMIT_REF_NAME
+    url: https://$CI_COMMIT_REF_NAME.swf.local
