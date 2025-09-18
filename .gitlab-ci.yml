@@ -23,5 +23,5 @@ default:
   interruptible: true
 
 variables:
-  PUSH_FEATURE_BRANCH: "true"
+  PUSH_FEATURE_BRANCH: "false"
 
