@@ -24,4 +24,4 @@ default:
 
 variables:
   PUSH_FEATURE_BRANCH: "true"
-  BASE_IMAGE_BUILD: "true"
+

@@ -12,12 +12,11 @@
 # - Runner with privileged DinD (docker:24-dind service)
 # - $CI_REGISTRY, $CI_REGISTRY_IMAGE populated by GitLab
 # - BuildKit enabled (DOCKER_BUILDKIT=1)
-# - If Dockerfile uses --mount=type=secret,id=gitlab_token, we pass the CI_JOB_TOKEN
+# - If Dockerfile uses `--mount=type=secret,id=gitlab_token`, we pass the CI_JOB_TOKEN
 #
 # Common overrides:
 # - APP_NAME: optional subpath under $CI_REGISTRY_IMAGE
 # - PUSH_FEATURE_BRANCH: "true" to push feature branches
-# - BASE_IMAGE_BUILD: "true" to use the base image build job
 #
 # Outputs (docker.env):
 # - DOCKER_IMAGE_WITH_TAG: registry/path:tag
@@ -36,13 +35,12 @@ variables:
   DOCKER_TLS_CERTDIR: ""                 # disable TLS for DinD
   DOCKER_BUILDKIT: "1"
   PUSH_FEATURE_BRANCH: "false"           # set true to push from non-default, non-MR branches
-  BASE_IMAGE_BUILD: "false"              # set true to use the base image build job
 
 .before_docker: &before_docker
   - set -eu
   - echo "$CI_JOB_TOKEN" | docker login -u gitlab-ci-token --password-stdin "$CI_REGISTRY"
 
-.compute_meta: &compute_meta | 
+.compute_meta: &compute_meta |
   set -eu
   BASE_IMAGE_PATH="$CI_REGISTRY_IMAGE"
   if [ -n "${APP_NAME:-}" ] && [ "$APP_NAME" != "$CI_PROJECT_NAME" ]; then
@@ -61,40 +59,21 @@ variables:
   DOCKER_IMAGE_WITH_TAG="$BASE_IMAGE_PATH:$IMAGE_TAG"
   DOCKER_IMAGE_LATEST="$BASE_IMAGE_PATH:latest"
 
-.docker_build_template:
+build:docker:
   image: docker:24-cli
   stage: build
   services:
     - name: docker:24-dind
       alias: docker
   resource_group: "$CI_PROJECT_PATH:$CI_COMMIT_REF_SLUG"
+
   before_script:
     - *before_docker
     - *compute_meta
-  after_script:
-    - docker logout "$CI_REGISTRY" || true
-  artifacts:
-    reports:
-      dotenv: docker.env
-    paths:
-      - docker.env
-    expire_in: 30 days
-  retry:
-    max: 2
-    when:
-      - runner_system_failure
-      - stuck_or_timeout_failure
-      - api_failure
 
-build:docker:
-  extends: .docker_build_template
-  rules:
-    - if: $BASE_IMAGE_BUILD == "true"
-      when: never
-    - when: on_success
   script: |
     set -eu
-    BUILD_DATE="$(date -u +'%%Y-%%m-%%dT%%H:%%M:%%SZ')"
+    BUILD_DATE="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 
     docker build --pull \
       --secret id=gitlab_token,env=CI_JOB_TOKEN \
@@ -158,48 +137,18 @@ build:docker:
       echo "CS_IMAGE=$IMAGE_REF"
     } > docker.env
 
-build:base:docker:
-  extends: .docker_build_template
-  rules:
-    - if: $CI_COMMIT_TAG && $BASE_IMAGE_BUILD == "true"
-  script: |
-    set -eu
-    BUILD_DATE="$(date -u +'%%Y-%%m-%%dT%%H:%%M:%%SZ')"
+  after_script:
+    - docker logout "$CI_REGISTRY" || true
 
-    docker build --pull \
-      --secret id=gitlab_token,env=CI_JOB_TOKEN \
-      --build-arg CI_REGISTRY=$CI_REGISTRY \
-      --build-arg CI_API_V4_URL=$CI_API_V4_URL \
-      --build-arg CI_PROJECT_ID=$CI_PROJECT_ID \
-      --label org.opencontainers.image.created=$BUILD_DATE \
-      --label org.opencontainers.image.source=$CI_PROJECT_URL \
-      --label org.opencontainers.image.revision=$CI_COMMIT_SHA \
-      --label org.opencontainers.image.version=$IMAGE_TAG \
-      --label org.opencontainers.image.ref.name=$CI_COMMIT_REF_NAME \
-      --label org.opencontainers.image.vendor=zackbunch \
-      -t "$DOCKER_IMAGE_WITH_TAG" .
-
-    docker push "$DOCKER_IMAGE_WITH_TAG"
-
-    # Capture digest
-    DIGEST="$(docker inspect --format='{{index .RepoDigests 0}}' "$DOCKER_IMAGE_WITH_TAG" | cut -d'@' -f2)"
-    IMAGE_REF="$DOCKER_IMAGE_REPO@$DIGEST"
-
-    # Tag and push latest
-    docker tag "$DOCKER_IMAGE_WITH_TAG" "$DOCKER_IMAGE_LATEST"
-    docker push "$DOCKER_IMAGE_LATEST"
-
-    # Emit dotenv
-    {
-      echo "DOCKER_IMAGE_PUSHED=true"
-      echo "DOCKER_IMAGE_REPO=$DOCKER_IMAGE_REPO"
-      echo "DOCKER_IMAGE_TAG=$IMAGE_TAG"
-      echo "DOCKER_IMAGE_WITH_TAG=$DOCKER_IMAGE_WITH_TAG"
-      echo "DOCKER_IMAGE_DIGEST=$DIGEST"
-      echo "IMAGE_REF=$IMAGE_REF"
-      echo "CS_IMAGE=$IMAGE_REF"
-    } > docker.env
-
-
-
-
+  artifacts:
+    reports:
+      dotenv: docker.env
+    paths:
+      - docker.env
+    expire_in: 30 days
+  retry:
+    max: 2
+    when:
+      - runner_system_failure
+      - stuck_or_timeout_failure
+      - api_failure
