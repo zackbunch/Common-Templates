@@ -59,18 +59,37 @@ variables:
   DOCKER_IMAGE_WITH_TAG="$BASE_IMAGE_PATH:$IMAGE_TAG"
   DOCKER_IMAGE_LATEST="$BASE_IMAGE_PATH:latest"
 
-build:docker:
+.docker_build_template:
   image: docker:24-cli
   stage: build
   services:
     - name: docker:24-dind
       alias: docker
   resource_group: "$CI_PROJECT_PATH:$CI_COMMIT_REF_SLUG"
-
   before_script:
     - *before_docker
     - *compute_meta
+  after_script:
+    - docker logout "$CI_REGISTRY" || true
+  artifacts:
+    reports:
+      dotenv: docker.env
+    paths:
+      - docker.env
+    expire_in: 30 days
+  retry:
+    max: 2
+    when:
+      - runner_system_failure
+      - stuck_or_timeout_failure
+      - api_failure
 
+  
+
+
+
+docker:build:
+  extends: .docker_build_template
   script: |
     set -eu
     BUILD_DATE="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
@@ -136,19 +155,3 @@ build:docker:
       echo "IMAGE_REF=$IMAGE_REF"
       echo "CS_IMAGE=$IMAGE_REF"
     } > docker.env
-
-  after_script:
-    - docker logout "$CI_REGISTRY" || true
-
-  artifacts:
-    reports:
-      dotenv: docker.env
-    paths:
-      - docker.env
-    expire_in: 30 days
-  retry:
-    max: 2
-    when:
-      - runner_system_failure
-      - stuck_or_timeout_failure
-      - api_failure
