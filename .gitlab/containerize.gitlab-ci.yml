@@ -88,7 +88,7 @@ variables:
 
 
 
-docker:build:
+build:docker:
   extends: .docker_build_template
   script: |
     set -eu
