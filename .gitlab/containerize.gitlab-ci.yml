@@ -1,43 +1,48 @@
 # -----------------------------------------------------------------------------
-# Containerize Template (DinD, BuildKit + buildx)
+# Containerize Template (DinD, BuildKit)
 #
-# - BuildKit graph builds (fast), remote cache in registry
-# - Secrets via --mount=type=secret (CI_JOB_TOKEN)
-# - Deterministic tagging (tag | MR | SHA)
-# - Push policy: tags, default branch, MRs, or opt-in feature branches
+# What it does:
+# - Builds a Docker image with BuildKit + secrets
+# - Tags image deterministically (tag | MR | SHA)
+# - Push policy: default branch, tags, MRs, or opt-in feature branches
 # - Emits docker.env with digest-based IMAGE_REF for downstream jobs
 # - Adds OCI labels for traceability
-# - Optional multi-platform via $PLATFORMS (requires qemu/binfmt in DinD)
 #
 # Requirements:
-# - Privileged runner with docker:24-dind service
-# - $CI_REGISTRY, $CI_REGISTRY_IMAGE set by GitLab
-# - DOCKER_HOST points to DinD (tcp://docker:2375)
+# - Runner with privileged DinD (docker:24-dind service)
+# - $CI_REGISTRY, $CI_REGISTRY_IMAGE populated by GitLab
+# - BuildKit enabled (DOCKER_BUILDKIT=1)
+# - If Dockerfile uses --mount=type=secret,id=gitlab_token, we pass the CI_JOB_TOKEN
 #
 # Common overrides:
 # - APP_NAME: optional subpath under $CI_REGISTRY_IMAGE
-# - PUSH_FEATURE_BRANCH: "true" enables push from non-default branches
-# - PLATFORMS: e.g., "linux/amd64,linux/arm64" (needs binfmt in DinD)
+# - PUSH_FEATURE_BRANCH: "true" to push feature branches
+# - BASE_IMAGE_BUILD: "true" to use the base image build job
 #
 # Outputs (docker.env):
 # - DOCKER_IMAGE_WITH_TAG: registry/path:tag
-# - IMAGE_REF: registry/path@sha256:...   (preferred for deploy)
+# - IMAGE_REF: registry/path@sha256:...  (use for deploy)
 # - DOCKER_IMAGE_DIGEST: sha256:...
+#
+# Typical downstream usage:
+#   needs: ["build:docker"]
+#   artifacts: { reports: { dotenv: docker.env } }
+#   script: |
+#     set -eu
+#     echo "Deploying $IMAGE_REF"
+#     # helm upgrade --set image.digest="${DOCKER_IMAGE_DIGEST}" ...
 # -----------------------------------------------------------------------------
 variables:
   DOCKER_TLS_CERTDIR: ""                 # disable TLS for DinD
-  DOCKER_HOST: "tcp://docker:2375"       # talk to DinD
   DOCKER_BUILDKIT: "1"
-  PUSH_FEATURE_BRANCH: "false"
-  CACHE_REF: "$CI_REGISTRY_IMAGE:buildcache"
-  # Optional: uncomment to build multi-arch (requires qemu/binfmt in DinD)
-  # PLATFORMS: "linux/amd64,linux/arm64"
+  PUSH_FEATURE_BRANCH: "false"           # set true to push from non-default, non-MR branches
+  BASE_IMAGE_BUILD: "false"              # set true to use the base image build job
 
 .before_docker: &before_docker
   - set -eu
   - echo "$CI_JOB_TOKEN" | docker login -u gitlab-ci-token --password-stdin "$CI_REGISTRY"
 
-.compute_meta: &compute_meta |
+.compute_meta: &compute_meta | 
   set -eu
   BASE_IMAGE_PATH="$CI_REGISTRY_IMAGE"
   if [ -n "${APP_NAME:-}" ] && [ "$APP_NAME" != "$CI_PROJECT_NAME" ]; then
@@ -56,88 +61,90 @@ variables:
   DOCKER_IMAGE_WITH_TAG="$BASE_IMAGE_PATH:$IMAGE_TAG"
   DOCKER_IMAGE_LATEST="$BASE_IMAGE_PATH:latest"
 
-build:docker:
-  image: docker:24
+.docker_build_template:
+  image: docker:24-cli
   stage: build
   services:
     - name: docker:24-dind
       alias: docker
   resource_group: "$CI_PROJECT_PATH:$CI_COMMIT_REF_SLUG"
-
   before_script:
     - *before_docker
     - *compute_meta
-    # Initialize a per-job builder bound to DinD
-    - docker buildx create --driver docker-container --name ci-builder --use "$DOCKER_HOST"
-    - docker buildx inspect --bootstrap
+  after_script:
+    - docker logout "$CI_REGISTRY" || true
+  artifacts:
+    reports:
+      dotenv: docker.env
+    paths:
+      - docker.env
+    expire_in: 30 days
+  retry:
+    max: 2
+    when:
+      - runner_system_failure
+      - stuck_or_timeout_failure
+      - api_failure
 
+build:docker:
+  extends: .docker_build_template
+  rules:
+    - if: $BASE_IMAGE_BUILD == "true"
+      when: never
+    - when: on_success
   script: |
     set -eu
-    BUILD_DATE="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+    BUILD_DATE="$(date -u +'%%Y-%%m-%%dT%%H:%%M:%%SZ')"
 
-    # Decide push policy
-    SHOULD_PUSH="false"
-    if [ "${CI_PIPELINE_SOURCE:-}" = "merge_request_event" ]; then SHOULD_PUSH="true"; fi
-    if [ -n "${CI_COMMIT_TAG:-}" ]; then SHOULD_PUSH="true"; fi
-    if [ -n "${CI_COMMIT_BRANCH:-}" ] && [ "$CI_COMMIT_BRANCH" = "$CI_DEFAULT_BRANCH" ]; then SHOULD_PUSH="true"; fi
-    if [ "${PUSH_FEATURE_BRANCH:-false}" = "true" ]; then SHOULD_PUSH="true"; fi
-
-    # Common build args/labels
-    BUILD_ARGS=(
-      --build-arg CI_REGISTRY="$CI_REGISTRY"
-      --build-arg CI_API_V4_URL="$CI_API_V4_URL"
-      --build-arg CI_PROJECT_ID="$CI_PROJECT_ID"
-      --secret id=gitlab_token,env=CI_JOB_TOKEN
-      --label "org.opencontainers.image.created=$BUILD_DATE"
-      --label "org.opencontainers.image.source=$CI_PROJECT_URL"
-      --label "org.opencontainers.image.revision=$CI_COMMIT_SHA"
-      --label "org.opencontainers.image.version=$IMAGE_TAG"
-      --label "org.opencontainers.image.ref.name=$CI_COMMIT_REF_NAME"
-      --label "org.opencontainers.image.vendor=zackbunch"
-      --build-arg BUILDKIT_INLINE_CACHE=1
-      --cache-from "type=registry,ref=$CACHE_REF"
-      --cache-to   "type=registry,ref=$CACHE_REF,mode=max"
-      -t "$DOCKER_IMAGE_WITH_TAG"
-      .
-    )
-
-    # Optional multi-arch
-    if [ -n "${PLATFORMS:-}" ]; then
-      BUILD_ARGS=( --platform "$PLATFORMS" "${BUILD_ARGS[@]}" )
-    fi
+    docker build --pull \
+      --secret id=gitlab_token,env=CI_JOB_TOKEN \
+      --build-arg CI_REGISTRY=$CI_REGISTRY \
+      --build-arg CI_API_V4_URL=$CI_API_V4_URL \
+      --build-arg CI_PROJECT_ID=$CI_PROJECT_ID \
+      --label org.opencontainers.image.created=$BUILD_DATE \
+      --label org.opencontainers.image.source=$CI_PROJECT_URL \
+      --label org.opencontainers.image.revision=$CI_COMMIT_SHA \
+      --label org.opencontainers.image.version=$IMAGE_TAG \
+      --label org.opencontainers.image.ref.name=$CI_COMMIT_REF_NAME \
+      --label org.opencontainers.image.vendor=zackbunch \
+      -t "$DOCKER_IMAGE_WITH_TAG" .
 
     IMAGE_PUSHED="false"
-    DOCKER_IMAGE_DIGEST=""
+    DIGEST=""
     IMAGE_REF=""
+
+    # Push policy
+    SHOULD_PUSH="false"
+    if [ "${CI_PIPELINE_SOURCE:-}" = "merge_request_event" ]; then
+      SHOULD_PUSH="true"
+    fi
+    if [ -n "${CI_COMMIT_TAG:-}" ]; then
+      SHOULD_PUSH="true"
+    fi
+    if [ -n "${CI_COMMIT_BRANCH:-}" ] && [ "$CI_COMMIT_BRANCH" = "$CI_DEFAULT_BRANCH" ]; then
+      SHOULD_PUSH="true"
+    fi
+    if [ "${PUSH_FEATURE_BRANCH:-false}" = "true" ]; then
+      SHOULD_PUSH="true"
+    fi
 
     if [ "$SHOULD_PUSH" = "true" ]; then
       IMAGE_PUSHED="true"
-      # Produce provenance & SBOM on push
-      docker buildx build \
-        --pull \
-        --provenance=true \
-        --sbom=true \
-        --push \
-        "${BUILD_ARGS[@]}"
+      docker push "$DOCKER_IMAGE_WITH_TAG"
 
-      # Derive canonical digest (no local pull)
-      # Works for single or multi-platform tags
-      DIGEST_LINE="$(docker buildx imagetools inspect "$DOCKER_IMAGE_WITH_TAG" | awk '/Digest:/ {print $2; exit}')"
-      if [ -n "$DIGEST_LINE" ]; then
-        DOCKER_IMAGE_DIGEST="$DIGEST_LINE"
-        IMAGE_REF="$DOCKER_IMAGE_REPO@$DOCKER_IMAGE_DIGEST"
+      # Capture digest cleanly (no redundant pull)
+      if docker inspect "$DOCKER_IMAGE_WITH_TAG" >/dev/null 2>&1; then
+        DIGEST="$(docker inspect --format='{{index .RepoDigests 0}}' "$DOCKER_IMAGE_WITH_TAG" | cut -d'@' -f2)"
+        IMAGE_REF="$DOCKER_IMAGE_REPO@$DIGEST"
       fi
 
       # Push 'latest' only for default branch
       if [ -n "${CI_COMMIT_BRANCH:-}" ] && [ "$CI_COMMIT_BRANCH" = "$CI_DEFAULT_BRANCH" ]; then
-        docker buildx imagetools create --tag "$DOCKER_IMAGE_LATEST" "$DOCKER_IMAGE_WITH_TAG"
+        docker tag "$DOCKER_IMAGE_WITH_TAG" "$DOCKER_IMAGE_LATEST"
+        docker push "$DOCKER_IMAGE_LATEST"
       fi
     else
-      # No push: load into DinD engine for quick local use
-      docker buildx build \
-        --pull \
-        --load \
-        "${BUILD_ARGS[@]}"
+      echo "Skipping push."
     fi
 
     # Emit dotenv
@@ -146,25 +153,53 @@ build:docker:
       echo "DOCKER_IMAGE_REPO=$DOCKER_IMAGE_REPO"
       echo "DOCKER_IMAGE_TAG=$IMAGE_TAG"
       echo "DOCKER_IMAGE_WITH_TAG=$DOCKER_IMAGE_WITH_TAG"
-      echo "DOCKER_IMAGE_DIGEST=$DOCKER_IMAGE_DIGEST"
+      echo "DOCKER_IMAGE_DIGEST=$DIGEST"
       echo "IMAGE_REF=$IMAGE_REF"
       echo "CS_IMAGE=$IMAGE_REF"
     } > docker.env
 
-  after_script:
-    - docker logout "$CI_REGISTRY" || true
-    - docker buildx rm ci-builder || true
+build:base:docker:
+  extends: .docker_build_template
+  rules:
+    - if: $CI_COMMIT_TAG && $BASE_IMAGE_BUILD == "true"
+  script: |
+    set -eu
+    BUILD_DATE="$(date -u +'%%Y-%%m-%%dT%%H:%%M:%%SZ')"
 
-  artifacts:
-    reports:
-      dotenv: docker.env
-    paths:
-      - docker.env
-    expire_in: 30 days
+    docker build --pull \
+      --secret id=gitlab_token,env=CI_JOB_TOKEN \
+      --build-arg CI_REGISTRY=$CI_REGISTRY \
+      --build-arg CI_API_V4_URL=$CI_API_V4_URL \
+      --build-arg CI_PROJECT_ID=$CI_PROJECT_ID \
+      --label org.opencontainers.image.created=$BUILD_DATE \
+      --label org.opencontainers.image.source=$CI_PROJECT_URL \
+      --label org.opencontainers.image.revision=$CI_COMMIT_SHA \
+      --label org.opencontainers.image.version=$IMAGE_TAG \
+      --label org.opencontainers.image.ref.name=$CI_COMMIT_REF_NAME \
+      --label org.opencontainers.image.vendor=zackbunch \
+      -t "$DOCKER_IMAGE_WITH_TAG" .
 
-  retry:
-    max: 2
-    when:
-      - runner_system_failure
-      - stuck_or_timeout_failure
-      - api_failure
+    docker push "$DOCKER_IMAGE_WITH_TAG"
+
+    # Capture digest
+    DIGEST="$(docker inspect --format='{{index .RepoDigests 0}}' "$DOCKER_IMAGE_WITH_TAG" | cut -d'@' -f2)"
+    IMAGE_REF="$DOCKER_IMAGE_REPO@$DIGEST"
+
+    # Tag and push latest
+    docker tag "$DOCKER_IMAGE_WITH_TAG" "$DOCKER_IMAGE_LATEST"
+    docker push "$DOCKER_IMAGE_LATEST"
+
+    # Emit dotenv
+    {
+      echo "DOCKER_IMAGE_PUSHED=true"
+      echo "DOCKER_IMAGE_REPO=$DOCKER_IMAGE_REPO"
+      echo "DOCKER_IMAGE_TAG=$IMAGE_TAG"
+      echo "DOCKER_IMAGE_WITH_TAG=$DOCKER_IMAGE_WITH_TAG"
+      echo "DOCKER_IMAGE_DIGEST=$DIGEST"
+      echo "IMAGE_REF=$IMAGE_REF"
+      echo "CS_IMAGE=$IMAGE_REF"
+    } > docker.env
+
+
+
+
