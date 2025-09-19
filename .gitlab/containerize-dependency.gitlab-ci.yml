@@ -1,7 +1,6 @@
 variables:
   DOCKER_TLS_CERTDIR: ""                 # disable TLS for DinD
   DOCKER_BUILDKIT: "1"
-  DOCKER_HOST: "tcp://docker:2375"
   CI_APPLICATION_TAG: ""                 # optional override
 
 .before_docker: &before_docker
@@ -55,13 +54,24 @@ build:docker:
     - *compute_meta
   script: |
     set -euo pipefail
-    # If you want multi-arch later, keep buildx and add --platform + --push.
-    docker build -t "$DOCKER_IMAGE_WITH_TAG" .
-    docker push "$DOCKER_IMAGE_WITH_TAG"
-    if [ "$PUBLISH_LATEST" = "true" ]; then
-      docker tag "$DOCKER_IMAGE_WITH_TAG" "$DOCKER_IMAGE_LATEST"
-      docker push "$DOCKER_IMAGE_LATEST"
-    fi
+
+    # Ensure buildx is ready (works on DinD)
+    docker buildx inspect default >/dev/null 2>&1 || docker buildx create --name default --use
+
+    # Build + push with CI_JOB_TOKEN as a BuildKit secret
+    docker buildx build \
+      --push \
+      --secret id=gitlab_token,env=CI_JOB_TOKEN \
+      --build-arg CI_REGISTRY="$CI_REGISTRY" \
+      --build-arg CI_API_V4_URL="$CI_API_V4_URL" \
+      --build-arg CI_PROJECT_ID="$CI_PROJECT_ID" \
+      -t "$DOCKER_IMAGE_WITH_TAG" \
+      $( [ "$PUBLISH_LATEST" = "true" ] && printf -- '-t %s ' "$DOCKER_IMAGE_LATEST" ) \
+      .
+
+    # Optionally emit IMAGE_REF (digest) for deploy steps
+    REF="$(docker buildx imagetools inspect "$DOCKER_IMAGE_WITH_TAG" --format '{{.Manifest.Digest}}')"
+    echo "IMAGE_REF=${DOCKER_IMAGE_REPO}@${REF}" >> docker.env
   after_script:
     - docker logout "$CI_REGISTRY" || true
   artifacts:
