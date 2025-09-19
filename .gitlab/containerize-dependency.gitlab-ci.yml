@@ -15,7 +15,7 @@ variables:
     BASE_IMAGE_PATH="${BASE_IMAGE_PATH}/${APP_NAME}"
   fi
 
-  # derive tag if not provided; prefer commit tag (for tag-only jobs this always exists)
+  # derive tag if not provided; prefer commit tag
   TAG_SRC="${CI_APPLICATION_TAG:-${CI_COMMIT_TAG:-}}"
   if [ -z "$TAG_SRC" ]; then
     echo "CI_APPLICATION_TAG is empty and CI_COMMIT_TAG not present; refuse to build." >&2
@@ -30,7 +30,7 @@ variables:
   DOCKER_IMAGE_LATEST="${BASE_IMAGE_PATH}:latest"
   PUBLISH_LATEST="true"
 
-  # emit docker.env
+  # emit docker.env base
   {
     echo "DOCKER_IMAGE_REPO=$DOCKER_IMAGE_REPO"
     echo "DOCKER_IMAGE_WITH_TAG=$DOCKER_IMAGE_WITH_TAG"
@@ -45,15 +45,19 @@ build:docker:
   services:
     - name: docker:24-dind
       alias: docker
-  # rules:
-  #   - if: '$CI_COMMIT_TAG'        # run on any tag
-  #   - when: never
+  rules:
+    - if: '$CI_COMMIT_TAG'        # run on any tag
+    - when: never
   resource_group: "$CI_PROJECT_PATH:$CI_COMMIT_REF_SLUG"
   before_script:
     - *before_docker
     - *compute_meta
+    # ensure a usable buildx builder
+    - docker buildx inspect default >/dev/null 2>&1 || docker buildx create --name default --use
   script: |
     set -euo pipefail
+
+    # Build & push; attach both tags in one run if desired
     docker buildx build \
       --push \
       --secret id=gitlab_token,env=CI_JOB_TOKEN \
@@ -63,6 +67,16 @@ build:docker:
       -t "$DOCKER_IMAGE_WITH_TAG" \
       $( [ "$PUBLISH_LATEST" = "true" ] && printf -- '-t %s ' "$DOCKER_IMAGE_LATEST" ) \
       .
+
+    # Get digest of the pushed image (since --push doesn't load locally)
+    DIGEST="$(docker buildx imagetools inspect "$DOCKER_IMAGE_WITH_TAG" --format '{{.Manifest.Digest}}' | tr -d '\n')"
+    IMAGE_REF="$DOCKER_IMAGE_REPO@$DIGEST"
+    {
+      echo "IMAGE_REF=$IMAGE_REF"
+      echo "IMAGE_DIGEST=$DIGEST"
+    } >> docker.env
+  after_script:
+    - docker logout "$CI_REGISTRY" || true
   artifacts:
     reports: { dotenv: docker.env }
     paths: [docker.env]
