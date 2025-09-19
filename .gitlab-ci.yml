@@ -17,6 +17,6 @@ default:
 
 variables:
   PUSH_LATEST: "true"
-  CI_APPLICATION_TAG: 3.1.0
+  CI_APPLICATION_TAG: 3.2.0
 
 
