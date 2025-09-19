@@ -45,9 +45,6 @@ build:docker:
   services:
     - name: docker:24-dind
       alias: docker
-  rules:
-    - if: '$CI_COMMIT_TAG'        # run on any tag
-    - when: never
   resource_group: "$CI_PROJECT_PATH:$CI_COMMIT_REF_SLUG"
   before_script:
     - *before_docker
