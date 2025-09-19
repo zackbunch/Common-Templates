@@ -54,11 +54,6 @@ build:docker:
     - *compute_meta
   script: |
     set -euo pipefail
-
-    # Ensure buildx is ready (works on DinD)
-    docker buildx inspect default >/dev/null 2>&1 || docker buildx create --name default --use
-
-    # Build + push with CI_JOB_TOKEN as a BuildKit secret
     docker buildx build \
       --push \
       --secret id=gitlab_token,env=CI_JOB_TOKEN \
@@ -68,10 +63,6 @@ build:docker:
       -t "$DOCKER_IMAGE_WITH_TAG" \
       $( [ "$PUBLISH_LATEST" = "true" ] && printf -- '-t %s ' "$DOCKER_IMAGE_LATEST" ) \
       .
-
-    # Optionally emit IMAGE_REF (digest) for deploy steps
-    REF="$(docker buildx imagetools inspect "$DOCKER_IMAGE_WITH_TAG" --format '{{.Manifest.Digest}}')"
-    echo "IMAGE_REF=${DOCKER_IMAGE_REPO}@${REF}" >> docker.env
   artifacts:
     reports: { dotenv: docker.env }
     paths: [docker.env]
