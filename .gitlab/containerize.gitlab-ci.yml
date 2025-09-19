@@ -51,10 +51,6 @@ variables:
       - stuck_or_timeout_failure
       - api_failure
 
-
-
-
-
 build:docker:
   extends: .docker_build_template
   script: |

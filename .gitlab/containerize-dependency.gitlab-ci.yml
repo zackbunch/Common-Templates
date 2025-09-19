@@ -9,7 +9,6 @@ variables:
 
 .compute_meta: &compute_meta |
   set -euo pipefail
-  : "${CI_COMMIT_TAG:?this job must run on a commit tag}"
 
   BASE_IMAGE_PATH="$CI_REGISTRY_IMAGE"
   if [ -n "${APP_NAME:-}" ]; then
@@ -33,7 +32,7 @@ variables:
     echo "PUBLISH_LATEST=$PUBLISH_LATEST"
   } > docker.env
 
-.docker_build_template:
+build:docker:
   image: docker:24-cli
   stage: build
   services:
@@ -43,13 +42,16 @@ variables:
   before_script:
     - *before_docker
     - *compute_meta
-  script:
-    - docker build -t "$DOCKER_IMAGE_WITH_TAG" .
-    - docker push "$DOCKER_IMAGE_WITH_TAG"
-    - if [ "$PUBLISH_LATEST" = "true" ]; then
-        docker tag "$DOCKER_IMAGE_WITH_TAG" "$DOCKER_IMAGE_LATEST" &&
-        docker push "$DOCKER_IMAGE_LATEST";
-      fi
+  script: |
+    set -eu
+    BUILD_DATE="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+
+    docker buildx build \
+      --secret id=gitlab_token,env=CI_JOB_TOKEN \
+      --build-arg CI_REGISTRY=$CI_REGISTRY \
+      --build-arg CI_API_V4_URL=$CI_API_V4_URL \
+      --build-arg CI_PROJECT_ID=$CI_PROJECT_ID \
+      -t "$DOCKER_IMAGE_WITH_TAG" .
   after_script:
     - docker logout "$CI_REGISTRY" || true
   artifacts:
@@ -62,9 +64,5 @@ variables:
       - runner_system_failure
       - stuck_or_timeout_failure
       - api_failure
-  rules:
-    - if: '$CI_COMMIT_TAG'        # run on any tag
-    - when: never                 # otherwise skip
 
-build:docker:
-  extends: .docker_build_template
+
