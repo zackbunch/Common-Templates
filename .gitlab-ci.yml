@@ -2,7 +2,7 @@
 
 include:
   - local: /.gitlab/containerize-dependency.gitlab-ci.yml
-  - local: /.gitlab/containerize.gitlab-ci.yml
+  # - local: /.gitlab/containerize.gitlab-ci.yml
   # - local: /.gitlab/job-rules.gitlab-ci.yml
   # - local: /.gitlab/container-scan.gitlab-ci.yml
   # - local: /.gitlab/secrets.gitlab-ci.yml
