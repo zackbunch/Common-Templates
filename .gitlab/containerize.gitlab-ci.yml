@@ -1,36 +1,3 @@
-# -----------------------------------------------------------------------------
-# Containerize Template (DinD, BuildKit)
-#
-# What it does:
-# - Builds a Docker image with BuildKit + secrets
-# - Tags image deterministically (tag | MR | SHA)
-# - Push policy: default branch, tags, MRs, or opt-in feature branches
-# - Emits docker.env with digest-based IMAGE_REF for downstream jobs
-# - Adds OCI labels for traceability
-#
-# Requirements:
-# - Runner with privileged DinD (docker:24-dind service)
-# - $CI_REGISTRY, $CI_REGISTRY_IMAGE populated by GitLab
-# - BuildKit enabled (DOCKER_BUILDKIT=1)
-# - If Dockerfile uses `--mount=type=secret,id=gitlab_token`, we pass the CI_JOB_TOKEN
-#
-# Common overrides:
-# - APP_NAME: optional subpath under $CI_REGISTRY_IMAGE
-# - PUSH_FEATURE_BRANCH: "true" to push feature branches
-#
-# Outputs (docker.env):
-# - DOCKER_IMAGE_WITH_TAG: registry/path:tag
-# - IMAGE_REF: registry/path@sha256:...  (use for deploy)
-# - DOCKER_IMAGE_DIGEST: sha256:...
-#
-# Typical downstream usage:
-#   needs: ["build:docker"]
-#   artifacts: { reports: { dotenv: docker.env } }
-#   script: |
-#     set -eu
-#     echo "Deploying $IMAGE_REF"
-#     # helm upgrade --set image.digest="${DOCKER_IMAGE_DIGEST}" ...
-# -----------------------------------------------------------------------------
 variables:
   DOCKER_TLS_CERTDIR: ""                 # disable TLS for DinD
   DOCKER_BUILDKIT: "1"
@@ -84,7 +51,7 @@ variables:
       - stuck_or_timeout_failure
       - api_failure
 
-  
+
 
 
 
