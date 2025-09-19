@@ -16,7 +16,7 @@ default:
   interruptible: true
 
 variables:
-  PUBLISH_LATEST: "true"
-  CI_APPLICATION_TAG: 3.3.0
+  # PUBLISH_LATEST: "true"
+  CI_APPLICATION_TAG: 3.1.0
 
 
