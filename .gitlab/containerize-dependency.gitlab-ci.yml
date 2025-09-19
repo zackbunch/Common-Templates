@@ -2,7 +2,11 @@ variables:
   DOCKER_TLS_CERTDIR: ""
   DOCKER_BUILDKIT: "1"
   CI_APPLICATION_TAG: ""
-  PUSH_LATEST: "false"              # <— opt-in
+  PUSH_LATEST: "false"
+
+.before_docker: &before_docker
+  - set -euo pipefail
+  - echo "$CI_JOB_TOKEN" | docker login -u gitlab-ci-token --password-stdin "$CI_REGISTRY"
 
 .compute_meta: &compute_meta |
   set -euo pipefail
