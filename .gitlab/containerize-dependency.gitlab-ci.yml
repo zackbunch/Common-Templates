@@ -1,6 +1,7 @@
 variables:
   DOCKER_TLS_CERTDIR: ""                 # disable TLS for DinD
   DOCKER_BUILDKIT: "1"
+  CI_APPLICATION_TAG: ""
 
 
 .before_docker: &before_docker
@@ -15,11 +16,10 @@ variables:
     BASE_IMAGE_PATH="${BASE_IMAGE_PATH}/${APP_NAME}"
   fi
 
-  # normalize tag: lowercase + safe chars
-  IMAGE_TAG="$(printf '%s' "$CI_COMMIT_TAG" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9_.-]+/-/g')"
+
 
   DOCKER_IMAGE_REPO="$BASE_IMAGE_PATH"
-  DOCKER_IMAGE_WITH_TAG="${BASE_IMAGE_PATH}:${IMAGE_TAG}"
+  DOCKER_IMAGE_WITH_TAG="${BASE_IMAGE_PATH}:${CI_APPLICATION_TAG}"
   DOCKER_IMAGE_LATEST="${BASE_IMAGE_PATH}:latest"
   PUBLISH_LATEST="true"
 
@@ -28,7 +28,7 @@ variables:
     echo "DOCKER_IMAGE_REPO=$DOCKER_IMAGE_REPO"
     echo "DOCKER_IMAGE_WITH_TAG=$DOCKER_IMAGE_WITH_TAG"
     echo "DOCKER_IMAGE_LATEST=$DOCKER_IMAGE_LATEST"
-    echo "IMAGE_TAG=$IMAGE_TAG"
+    echo "CI_APPLICATION_TAG=$CI_APPLICATION_TAG"
     echo "PUBLISH_LATEST=$PUBLISH_LATEST"
   } > docker.env
 
