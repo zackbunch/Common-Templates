@@ -1,8 +1,8 @@
 variables:
   DOCKER_TLS_CERTDIR: ""                 # disable TLS for DinD
   DOCKER_BUILDKIT: "1"
-  CI_APPLICATION_TAG: ""
-
+  DOCKER_HOST: "tcp://docker:2375"
+  CI_APPLICATION_TAG: ""                 # optional override
 
 .before_docker: &before_docker
   - set -euo pipefail
@@ -16,19 +16,27 @@ variables:
     BASE_IMAGE_PATH="${BASE_IMAGE_PATH}/${APP_NAME}"
   fi
 
+  # derive tag if not provided; prefer commit tag (for tag-only jobs this always exists)
+  TAG_SRC="${CI_APPLICATION_TAG:-${CI_COMMIT_TAG:-}}"
+  if [ -z "$TAG_SRC" ]; then
+    echo "CI_APPLICATION_TAG is empty and CI_COMMIT_TAG not present; refuse to build." >&2
+    exit 2
+  fi
 
+  # normalize: lowercase, safe chars for docker tag
+  IMAGE_TAG="$(printf '%s' "$TAG_SRC" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9_.-]+/-/g')"
 
   DOCKER_IMAGE_REPO="$BASE_IMAGE_PATH"
-  DOCKER_IMAGE_WITH_TAG="${BASE_IMAGE_PATH}:${CI_APPLICATION_TAG}"
+  DOCKER_IMAGE_WITH_TAG="${BASE_IMAGE_PATH}:${IMAGE_TAG}"
   DOCKER_IMAGE_LATEST="${BASE_IMAGE_PATH}:latest"
   PUBLISH_LATEST="true"
 
-  # emit docker.env for downstream jobs
+  # emit docker.env
   {
     echo "DOCKER_IMAGE_REPO=$DOCKER_IMAGE_REPO"
     echo "DOCKER_IMAGE_WITH_TAG=$DOCKER_IMAGE_WITH_TAG"
     echo "DOCKER_IMAGE_LATEST=$DOCKER_IMAGE_LATEST"
-    echo "CI_APPLICATION_TAG=$CI_APPLICATION_TAG"
+    echo "IMAGE_TAG=$IMAGE_TAG"
     echo "PUBLISH_LATEST=$PUBLISH_LATEST"
   } > docker.env
 
@@ -38,20 +46,22 @@ build:docker:
   services:
     - name: docker:24-dind
       alias: docker
+  rules:
+    - if: '$CI_COMMIT_TAG'        # run on any tag
+    - when: never
   resource_group: "$CI_PROJECT_PATH:$CI_COMMIT_REF_SLUG"
   before_script:
     - *before_docker
     - *compute_meta
   script: |
-    set -eu
-    BUILD_DATE="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-
-    docker buildx build \
-      --secret id=gitlab_token,env=CI_JOB_TOKEN \
-      --build-arg CI_REGISTRY=$CI_REGISTRY \
-      --build-arg CI_API_V4_URL=$CI_API_V4_URL \
-      --build-arg CI_PROJECT_ID=$CI_PROJECT_ID \
-      -t "$DOCKER_IMAGE_WITH_TAG" .
+    set -euo pipefail
+    # If you want multi-arch later, keep buildx and add --platform + --push.
+    docker build -t "$DOCKER_IMAGE_WITH_TAG" .
+    docker push "$DOCKER_IMAGE_WITH_TAG"
+    if [ "$PUBLISH_LATEST" = "true" ]; then
+      docker tag "$DOCKER_IMAGE_WITH_TAG" "$DOCKER_IMAGE_LATEST"
+      docker push "$DOCKER_IMAGE_LATEST"
+    fi
   after_script:
     - docker logout "$CI_REGISTRY" || true
   artifacts:
@@ -64,5 +74,3 @@ build:docker:
       - runner_system_failure
       - stuck_or_timeout_failure
       - api_failure
-
-
