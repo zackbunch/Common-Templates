@@ -1,11 +1,8 @@
 variables:
-  DOCKER_TLS_CERTDIR: ""                 # disable TLS for DinD
+  DOCKER_TLS_CERTDIR: ""
   DOCKER_BUILDKIT: "1"
-  CI_APPLICATION_TAG: ""                 # optional override
-
-.before_docker: &before_docker
-  - set -euo pipefail
-  - echo "$CI_JOB_TOKEN" | docker login -u gitlab-ci-token --password-stdin "$CI_REGISTRY"
+  CI_APPLICATION_TAG: ""
+  PUSH_LATEST: "false"              # <— opt-in
 
 .compute_meta: &compute_meta |
   set -euo pipefail
@@ -15,22 +12,21 @@ variables:
     BASE_IMAGE_PATH="${BASE_IMAGE_PATH}/${APP_NAME}"
   fi
 
-  # derive tag if not provided; prefer commit tag
   TAG_SRC="${CI_APPLICATION_TAG:-${CI_COMMIT_TAG:-}}"
   if [ -z "$TAG_SRC" ]; then
     echo "CI_APPLICATION_TAG is empty and CI_COMMIT_TAG not present; refuse to build." >&2
     exit 2
   fi
 
-  # normalize: lowercase, safe chars for docker tag
   IMAGE_TAG="$(printf '%s' "$TAG_SRC" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9_.-]+/-/g')"
 
   DOCKER_IMAGE_REPO="$BASE_IMAGE_PATH"
   DOCKER_IMAGE_WITH_TAG="${BASE_IMAGE_PATH}:${IMAGE_TAG}"
   DOCKER_IMAGE_LATEST="${BASE_IMAGE_PATH}:latest"
-  PUBLISH_LATEST="true"
 
-  # emit docker.env base
+  # Only publish :latest if explicitly enabled
+  PUBLISH_LATEST="${PUSH_LATEST}"
+
   {
     echo "DOCKER_IMAGE_REPO=$DOCKER_IMAGE_REPO"
     echo "DOCKER_IMAGE_WITH_TAG=$DOCKER_IMAGE_WITH_TAG"
@@ -45,16 +41,13 @@ build:docker:
   services:
     - name: docker:24-dind
       alias: docker
-  resource_group: "$CI_PROJECT_PATH:$CI_COMMIT_REF_SLUG"
   before_script:
     - *before_docker
     - *compute_meta
-    # ensure a usable buildx builder
     - docker buildx inspect default >/dev/null 2>&1 || docker buildx create --name default --use
   script: |
     set -euo pipefail
 
-    # Build & push; attach both tags in one run if desired
     docker buildx build \
       --push \
       --secret id=gitlab_token,env=CI_JOB_TOKEN \
@@ -65,23 +58,15 @@ build:docker:
       $( [ "$PUBLISH_LATEST" = "true" ] && printf -- '-t %s ' "$DOCKER_IMAGE_LATEST" ) \
       .
 
-    # Get digest of the pushed image (since --push doesn't load locally)
-    DIGEST="$(docker inspect --format='{{index .RepoDigests 0}}' "$DOCKER_IMAGE_WITH_TAG" | cut -d'@' -f2)"
+    # Correct digest lookup for a pushed image
+    DIGEST="$(docker buildx imagetools inspect "$DOCKER_IMAGE_WITH_TAG" --format '{{.Manifest.Digest}}' | tr -d '\n')"
     IMAGE_REF="$DOCKER_IMAGE_REPO@$DIGEST"
     {
       echo "IMAGE_REF=$IMAGE_REF"
       echo "IMAGE_DIGEST=$DIGEST"
       echo "CS_IMAGE=$IMAGE_REF"
     } >> docker.env
-  after_script:
-    - docker logout "$CI_REGISTRY" || true
   artifacts:
     reports: { dotenv: docker.env }
     paths: [docker.env]
     expire_in: 30 days
-  retry:
-    max: 2
-    when:
-      - runner_system_failure
-      - stuck_or_timeout_failure
-      - api_failure
