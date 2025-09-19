@@ -66,11 +66,12 @@ build:docker:
       .
 
     # Get digest of the pushed image (since --push doesn't load locally)
-    DIGEST="$(docker buildx imagetools inspect "$DOCKER_IMAGE_WITH_TAG" --format '{{.Manifest.Digest}}' | tr -d '\n')"
+    DIGEST="$(docker inspect --format='{{index .RepoDigests 0}}' "$DOCKER_IMAGE_WITH_TAG" | cut -d'@' -f2)"
     IMAGE_REF="$DOCKER_IMAGE_REPO@$DIGEST"
     {
       echo "IMAGE_REF=$IMAGE_REF"
       echo "IMAGE_DIGEST=$DIGEST"
+      echo "CS_IMAGE=$IMAGE_REF"
     } >> docker.env
   after_script:
     - docker logout "$CI_REGISTRY" || true
