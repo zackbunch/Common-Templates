@@ -18,5 +18,6 @@ default:
 variables:
   PUSH_LATEST: "false"
   CI_APPLICATION_TAG: 3.3.0
+  EXTRA_BUILD_ARGS: "NPM_TOKEN=zack SOME_FLAG=true"
 
 

@@ -3,6 +3,7 @@ variables:
   DOCKER_BUILDKIT: "1"
   CI_APPLICATION_TAG: ""
   PUSH_LATEST: "false"
+  EXTRA_BUILD_ARGS: ""
 
 .before_docker: &before_docker
   - set -euo pipefail
@@ -52,12 +53,18 @@ build:docker:
   script: |
     set -euo pipefail
 
+    EXTRA_ARGS=""
+    if [ -n "${EXTRA_BUILD_ARGS:-}" ]; then
+      EXTRA_ARGS=$(echo "$EXTRA_BUILD_ARGS" | xargs -n 1 printf -- '--build-arg %s ')
+    fi
+
     docker buildx build \
       --push \
       --secret id=gitlab_token,env=CI_JOB_TOKEN \
       --build-arg CI_REGISTRY="$CI_REGISTRY" \
       --build-arg CI_API_V4_URL="$CI_API_V4_URL" \
       --build-arg CI_PROJECT_ID="$CI_PROJECT_ID" \
+      $EXTRA_ARGS \
       -t "$DOCKER_IMAGE_WITH_TAG" \
       $( [ "$PUBLISH_LATEST" = "true" ] && printf -- '-t %s ' "$DOCKER_IMAGE_LATEST" ) \
       .
