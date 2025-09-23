@@ -20,3 +20,4 @@ build:docker:
   extends: .docker_build_template
   variables:
     EXTRA_BUILD_ARGS: "--build-arg FOO=bar"
+    PUSH_FEATURE_BRANCH: "true"
