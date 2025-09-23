@@ -127,7 +127,9 @@ stages: [build]
         [ -n "$DIGEST" ] && IMAGE_REF="${BASE_IMAGE_PATH}@${DIGEST}"
       fi
       [ -z "$IMAGE_REF" ] && IMAGE_REF="$DOCKER_IMAGE_WITH_TAG"
-      printf 'DOCKER_IMAGE_WITH_TAG=%s\nIMAGE_REF=%s\n' "$DOCKER_IMAGE_WITH_TAG" "$IMAGE_REF" | tee docker.env
+
+      printf 'DOCKER_IMAGE_WITH_TAG=%s\nIMAGE_REF=%s\nCS_IMAGE=%s\n' \
+        "$DOCKER_IMAGE_WITH_TAG" "$IMAGE_REF" "$IMAGE_REF" | tee docker.env
 
   artifacts:
     when: always
