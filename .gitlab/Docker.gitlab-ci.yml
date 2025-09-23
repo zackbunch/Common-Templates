@@ -18,7 +18,7 @@ variables:
 stages: [build]
 
 # -------------------------------- Commons --------------------------------
-.before_docker: &before_docker |
+.before_docker: &before_docker |-
   set -eu
   echo "$CI_JOB_TOKEN" | docker login -u gitlab-ci-token --password-stdin "$CI_REGISTRY"
 
@@ -37,8 +37,8 @@ stages: [build]
   script:
     - *before_docker
 
-    # ----- Compute meta -----
-    - |
+    # ----- Compute meta ----- 
+    - |-
       set -eu
       if [ -n "${CI_APPLICATION_REPOSITORY:-}" ]; then
         BASE_IMAGE_PATH="$CI_APPLICATION_REPOSITORY"
@@ -80,8 +80,8 @@ stages: [build]
         ATTEST_ARGS="$ATTEST_ARGS --attest=type=sbom"
       fi
 
-    # ----- Build -----
-    - |
+    # ----- Build ----- 
+    - |-
       set -eu
       BUILD_DATE="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 
@@ -100,8 +100,8 @@ stages: [build]
         -f "$DOCKERFILE" $EXTRA_BUILD_ARGS \
         -t "$DOCKER_IMAGE_WITH_TAG" "$CONTEXT"
 
-    # ----- Push -----
-    - |
+    # ----- Push ----- 
+    - |-
       set -eu
       if [ "$WILL_PUSH" = "true" ]; then
         docker push "$DOCKER_IMAGE_WITH_TAG"
@@ -109,20 +109,20 @@ stages: [build]
         echo "Skipping push per policy."
       fi
 
-    # ----- Compute IMAGE_REF -----
-    - |
-      set -eu
-      IMAGE_REF=""
-      if [ "$WILL_PUSH" = "true" ]; then
-        docker pull "$DOCKER_IMAGE_WITH_TAG" >/dev/null 2>&1 || true
-      fi
-      if docker image inspect "$DOCKER_IMAGE_WITH_TAG" >/dev/null 2>&1; then
-        DIGEST="$(docker inspect --format='{{index .RepoDigests 0}}' "$DOCKER_IMAGE_WITH_TAG" | cut -d'@' -f2 || true)"
-        [ -n "$DIGEST" ] && IMAGE_REF="${BASE_IMAGE_PATH}@${DIGEST}"
-      fi
-      [ -z "$IMAGE_REF" ] && IMAGE_REF="$DOCKER_IMAGE_WITH_TAG"
-
-      printf 'DOCKER_IMAGE_WITH_TAG=%s\nIMAGE_REF=%s\nCS_IMAGE=%s\n' \
+    # ----- Compute IMAGE_REF ----- 
+    # Create an immutable image reference for pushed images. 
+    - | 
+      set -eu 
+      IMAGE_REF="" 
+      if docker image inspect "$DOCKER_IMAGE_WITH_TAG" >/dev/null 2>&1; then 
+        DIGEST="$(docker inspect --format='{{index .RepoDigests 0}}' "$DOCKER_IMAGE_WITH_TAG" | cut -d'@' -f2 || true)" 
+        [ -n "$DIGEST" ] && IMAGE_REF="${BASE_IMAGE_PATH}@${DIGEST}" 
+      fi 
+ 
+      # Fallback to the mutable tag if we couldn't get a digest (e.g., image was not pushed). 
+      [ -z "$IMAGE_REF" ] && IMAGE_REF="$DOCKER_IMAGE_WITH_TAG" 
+ 
+      printf 'DOCKER_IMAGE_WITH_TAG=%s\nIMAGE_REF=%s\nCS_IMAGE=%s\n' 
         "$DOCKER_IMAGE_WITH_TAG" "$IMAGE_REF" "$IMAGE_REF" | tee docker.env
 
   artifacts:
