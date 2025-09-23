@@ -8,7 +8,7 @@ ARG CI_PROJECT_ID
 ARG PKG_NAME=sqlcl
 ARG PKG_VERSION=0.0.1
 ARG PKG_FILE=sqlcl.tar.gz
-
+ARG PACKAGE_URL
 # Set the working directory
 WORKDIR /app
 

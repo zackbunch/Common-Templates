@@ -37,7 +37,8 @@ stages: [build]
   variables:
     DOCKERFILE: "Dockerfile"
     CONTEXT: "."
-    EXTRA_BUILD_ARGS: ""
+    EXTRA_BUILD_ARGS: ""      # raw extra flags (e.g., --target runtime)
+    BUILD_ARGS: ""            # ONLY user-supplied key=val pairs → --build-arg key=val
     ENABLE_PROVENANCE: "false"
     ENABLE_SBOM: "false"
   script:
@@ -86,6 +87,20 @@ stages: [build]
         ATTEST_ARGS="$ATTEST_ARGS --attest=type=sbom"
       fi
 
+      # --- ONLY user-specified build args (no auto CI args)
+      # Supports space OR newline-separated entries:
+      #   BUILD_ARGS: "FOO=bar PACKAGE_URL=https://..."
+      #   or
+      #   BUILD_ARGS: |
+      #     FOO=bar
+      #     PACKAGE_URL=https://...
+      BUILD_ARG_FLAGS=""
+      for kv in $(printf '%s\n' "${BUILD_ARGS:-}" | tr '\n' ' '); do
+        [ -n "$kv" ] || continue
+        BUILD_ARG_FLAGS="$BUILD_ARG_FLAGS --build-arg $kv"
+      done
+      EXTRA_BUILD_ARGS="$BUILD_ARG_FLAGS ${EXTRA_BUILD_ARGS:-}"
+
     # ----- Build -----
     - |
       set -eu
@@ -93,9 +108,6 @@ stages: [build]
 
       docker build --pull \
         $SECRET_ARG \
-        --build-arg CI_REGISTRY="$CI_REGISTRY" \
-        --build-arg CI_API_V4_URL="$CI_API_V4_URL" \
-        --build-arg CI_PROJECT_ID="$CI_PROJECT_ID" \
         --label org.opencontainers.image.created="$BUILD_DATE" \
         --label org.opencontainers.image.source="$CI_PROJECT_URL" \
         --label org.opencontainers.image.revision="$CI_COMMIT_SHA" \
