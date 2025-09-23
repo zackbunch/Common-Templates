@@ -11,16 +11,18 @@ workflow:
     - when: always
 
 variables:
-  DOCKER_TLS_CERTDIR: ""
-  DOCKER_BUILDKIT: "1"          # buildx uses BuildKit, keep on
+  DOCKER_TLS_CERTDIR: ""          # disable TLS for DinD
+  DOCKER_BUILDKIT: "1"
   PUSH_FEATURE_BRANCH: "false"
 
 stages: [build]
 
+# -------------------------------- Commons --------------------------------
 .before_docker: &before_docker |
   set -eu
   echo "$CI_JOB_TOKEN" | docker login -u gitlab-ci-token --password-stdin "$CI_REGISTRY"
 
+# -------------------------------- Build template --------------------------------
 .docker_build_template:
   stage: build
   image: docker:24
@@ -29,19 +31,11 @@ stages: [build]
   variables:
     DOCKERFILE: "Dockerfile"
     CONTEXT: "."
-    EXTRA_BUILD_ARGS: ""   # raw flags (e.g., --target runtime)
-    BUILD_ARGS: ""         # user-supplied key=val -> --build-arg key=val
+    EXTRA_BUILD_ARGS: ""
+    ENABLE_PROVENANCE: "false"
+    ENABLE_SBOM: "false"
   script:
     - *before_docker
-
-    # Ensure a named buildx builder (docker:24 includes buildx plugin)
-    - |
-      set -eu
-      if ! docker buildx ls | grep -qE "^ci-builder"; then
-        docker buildx create --name ci-builder --driver docker-container --use
-      else
-        docker buildx use ci-builder
-      fi
 
     # ----- Compute meta -----
     - |
@@ -74,70 +68,57 @@ stages: [build]
       echo "WILL_PUSH=$WILL_PUSH"
 
       SECRET_ARG=""
-      [ -n "${CI_JOB_TOKEN:-}" ] && SECRET_ARG="--secret id=gitlab_token,env=CI_JOB_TOKEN"
+      if [ -n "${CI_JOB_TOKEN:-}" ]; then
+        SECRET_ARG="--secret id=gitlab_token,env=CI_JOB_TOKEN"
+      fi
 
-      # Only user-provided build args
-      BUILD_ARG_FLAGS=""
-      for kv in $(printf '%s\n' "${BUILD_ARGS:-}" | tr '\n' ' '); do
-        [ -n "$kv" ] || continue
-        BUILD_ARG_FLAGS="$BUILD_ARG_FLAGS --build-arg $kv"
-      done
-      EXTRA_BUILD_ARGS="$BUILD_ARG_FLAGS ${EXTRA_BUILD_ARGS:-}"
+      ATTEST_ARGS=""
+      if [ "${ENABLE_PROVENANCE}" = "true" ]; then
+        ATTEST_ARGS="$ATTEST_ARGS --provenance=mode=max"
+      fi
+      if [ "${ENABLE_SBOM}" = "true" ]; then
+        ATTEST_ARGS="$ATTEST_ARGS --attest=type=sbom"
+      fi
 
-      # metadata file for buildx to emit digest when pushing
-      META_FILE="buildx-metadata.json"
-
-    # ----- Buildx build (push or load) -----
+    # ----- Build -----
     - |
       set -eu
       BUILD_DATE="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-      LABELS="--label org.opencontainers.image.created=$BUILD_DATE \
-              --label org.opencontainers.image.source=$CI_PROJECT_URL \
-              --label org.opencontainers.image.revision=$CI_COMMIT_SHA \
-              --label org.opencontainers.image.version=$IMAGE_TAG \
-              --label org.opencontainers.image.ref.name=$CI_COMMIT_REF_NAME \
-              --label org.opencontainers.image.vendor=simulogix"
 
+      docker build --pull \
+        $SECRET_ARG \
+        --build-arg CI_REGISTRY="$CI_REGISTRY" \
+        --build-arg CI_API_V4_URL="$CI_API_V4_URL" \
+        --build-arg CI_PROJECT_ID="$CI_PROJECT_ID" \
+        --label org.opencontainers.image.created="$BUILD_DATE" \
+        --label org.opencontainers.image.source="$CI_PROJECT_URL" \
+        --label org.opencontainers.image.revision="$CI_COMMIT_SHA" \
+        --label org.opencontainers.image.version="$IMAGE_TAG" \
+        --label org.opencontainers.image.ref.name="$CI_COMMIT_REF_NAME" \
+        --label org.opencontainers.image.vendor="simulogix" \
+        $ATTEST_ARGS \
+        -f "$DOCKERFILE" $EXTRA_BUILD_ARGS \
+        -t "$DOCKER_IMAGE_WITH_TAG" "$CONTEXT"
+
+    # ----- Push -----
+    - |
+      set -eu
       if [ "$WILL_PUSH" = "true" ]; then
-        # Single-shot build + push; capture digest in metadata
-        docker buildx build \
-          $SECRET_ARG \
-          $LABELS \
-          -f "$DOCKERFILE" $EXTRA_BUILD_ARGS \
-          -t "$DOCKER_IMAGE_WITH_TAG" "$CONTEXT" \
-          --metadata-file "$META_FILE" \
-          --push
+        docker push "$DOCKER_IMAGE_WITH_TAG"
       else
-        # Local-only build (useful for test branches)
-        docker buildx build \
-          $SECRET_ARG \
-          $LABELS \
-          -f "$DOCKERFILE" $EXTRA_BUILD_ARGS \
-          -t "$DOCKER_IMAGE_WITH_TAG" "$CONTEXT" \
-          --load
+        echo "Skipping push per policy."
       fi
 
-    # ----- Compute IMAGE_REF (prefer buildx metadata when pushed) -----
+    # ----- Compute IMAGE_REF -----
     - |
       set -eu
       IMAGE_REF=""
-      if [ "$WILL_PUSH" = "true" ] && [ -s "$META_FILE" ]; then
-        # buildx writes .["containerimage.digest"] or .["image.name"][0].digest depending on version
-        DIGEST="$(awk -F'"' '/containerimage.digest/ {print $4}' "$META_FILE" || true)"
-        if [ -z "$DIGEST" ]; then
-          DIGEST="$(grep -Eo '"digest":"sha256:[0-9a-f]+' "$META_FILE" | head -n1 | cut -d':' -f3-)"
-          [ -n "$DIGEST" ] && DIGEST="sha256:$DIGEST"
-        fi
-        [ -n "$DIGEST" ] && IMAGE_REF="${BASE_IMAGE_PATH}@${DIGEST}"
+      if [ "$WILL_PUSH" = "true" ]; then
+        docker pull "$DOCKER_IMAGE_WITH_TAG" >/dev/null 2>&1 || true
       fi
-
-      # Fallbacks (e.g., no push)
-      if [ -z "$IMAGE_REF" ]; then
-        # RepoDigests may be empty when not pushed; fall back to tag
-        if docker image inspect "$DOCKER_IMAGE_WITH_TAG" >/dev/null 2>&1; then
-          DIGEST="$(docker inspect --format='{{index .RepoDigests 0}}' "$DOCKER_IMAGE_WITH_TAG" 2>/dev/null | cut -d'@' -f2 || true)"
-          [ -n "$DIGEST" ] && IMAGE_REF="${BASE_IMAGE_PATH}@${DIGEST}"
-        fi
+      if docker image inspect "$DOCKER_IMAGE_WITH_TAG" >/dev/null 2>&1; then
+        DIGEST="$(docker inspect --format='{{index .RepoDigests 0}}' "$DOCKER_IMAGE_WITH_TAG" | cut -d'@' -f2 || true)"
+        [ -n "$DIGEST" ] && IMAGE_REF="${BASE_IMAGE_PATH}@${DIGEST}"
       fi
       [ -z "$IMAGE_REF" ] && IMAGE_REF="$DOCKER_IMAGE_WITH_TAG"
 
@@ -146,7 +127,8 @@ stages: [build]
 
   artifacts:
     when: always
-    reports: { dotenv: docker.env }
+    reports:
+      dotenv: docker.env
     paths: [ "docker.env" ]
     expire_in: 1 week
 
