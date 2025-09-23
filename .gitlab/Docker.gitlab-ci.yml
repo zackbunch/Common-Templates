@@ -1,58 +1,134 @@
+# #################################################################################################
+# ##
+# ##  Reusable Docker Build Template for GitLab CI
+# ##
+# #################################################################################################
+#
+# This file provides a reusable and robust template (`.docker_build_template`) for building
+# and pushing Docker images.
+#
+# -------------------------------------------------------------------------------------------------
+#
+# ## How to Use
+#
+# 1. Include this file in your main `.gitlab-ci.yml`:
+#
+#    include:
+#      - local: '/.gitlab/Docker.gitlab-ci.yml'
+#
+# 2. Extend the template in your build job:
+#
+#    build-app:
+#      extends: .docker_build_template
+#
+# -------------------------------------------------------------------------------------------------
+#
+# ## Customization
+#
+# You can override the following variables in your job to control the build process:
+#
+# - DOCKERFILE:
+#     Path to the Dockerfile.
+#     Default: "Dockerfile"
+#
+# - CONTEXT:
+#     The build context path.
+#     Default: "."
+#
+# - EXTRA_BUILD_ARGS:
+#     Space-separated arguments to pass to `docker build`.
+#     Example: "--build-arg FOO=bar --target runtime"
+#
+# - PUSH_FEATURE_BRANCH:
+#     Set to "true" to enable pushing images built from feature branches (non-default, non-tagged).
+#     Default: "false"
+#
+# -------------------------------------------------------------------------------------------------
+#
+# ## Image Tagging and Push Policy
+#
+# - The image tag is determined automatically (e.g., from Git tag, or 'latest' for default branch).
+# - Images are automatically pushed for:
+#   - Git tags
+#   - Commits to the default branch
+#   - Merge requests
+#   - Feature branches if `PUSH_FEATURE_BRANCH` is "true".
+#
+# ## Outputs
+#
+# The job produces a `docker.env` artifact containing:
+# - DOCKER_IMAGE_WITH_TAG: The full image name and tag (e.g., my-image:latest).
+# - IMAGE_REF: An immutable reference with a digest (e.g., my-image@sha256:...). 
+#   Use this in downstream deployment jobs.
+#
+# #################################################################################################
+
+# The workflow rules define when pipelines run and set global variables.
 workflow:
   rules:
+    # For main development branches, build images into a branch-specific repository path.
     - if: '$CI_COMMIT_BRANCH =~ /\b(dev|test|int|master)\b/'
       variables:
         CI_APPLICATION_REPOSITORY: $CI_REGISTRY_IMAGE/$CI_COMMIT_BRANCH
         CI_APPLICATION_TAG: latest
+    # For feature branches following a specific pattern, group them in a common repository path.
     - if: '$CI_COMMIT_BRANCH =~ /^gmarm-\d+/'
       variables:
         CI_APPLICATION_REPOSITORY: $CI_REGISTRY_IMAGE/gmarm
         CI_APPLICATION_TAG: latest
-    # Fallback for everything else (no push unless opt-in)
+    # Fallback rule to ensure a pipeline is always created.
+    # Jobs inside the pipeline will still control their own execution with their 'rules'.
     - when: always
 
 # -------------------- Defaults --------------------
 variables:
-  DOCKER_TLS_CERTDIR: ""        # disable TLS for DinD
-  DOCKER_BUILDKIT: "1"          # enable BuildKit
-  PUSH_FEATURE_BRANCH: "false"
+  DOCKER_TLS_CERTDIR: ""        # Disable TLS for Docker-in-Docker (DinD) communication.
+  DOCKER_BUILDKIT: "1"          # Enable BuildKit for faster, more efficient builds.
+  PUSH_FEATURE_BRANCH: "false"  # By default, do not push images for feature branches.
 
 stages:
   - build
 
 # -------------------- Common prelude --------------------
+# This anchor defines a reusable script for logging into the GitLab Container Registry.
 .before_docker: &before_docker
+  # Exit immediately if a command exits with a non-zero status.
+  # Treat unset variables as an error.
   - set -eu
+  # Log in to the GitLab registry using the predefined CI_JOB_TOKEN.
   - echo "$CI_JOB_TOKEN" | docker login -u gitlab-ci-token --password-stdin "$CI_REGISTRY"
 
 # -------------------- Hidden, reusable build template --------------------
 .docker_build_template:
   stage: build
   image: docker:24
-  services: [ "docker:24-dind" ]
+  services: [ "docker:24-dind" ] # Use the Docker-in-Docker service to run Docker commands.
   variables:
-    # Override as needed from the including job/repo
+    # Override these variables in the job that extends this template as needed.
     DOCKERFILE: "Dockerfile"
     CONTEXT: "."
     # Optional: space-separated extra args (e.g. "--build-arg FOO=bar --target runtime")
     EXTRA_BUILD_ARGS: ""
   script:
+    # Log in to the registry before doing anything else.
     - *before_docker
 
-    # ----- Compute destination path and tag -----
+    # ----- Compute destination path and tag ----- 
     - |
       set -eu
+      # Determine the base image path. Use the one from the workflow rules if set,
+      # otherwise default to the project's registry image path.
       if [ -n "${CI_APPLICATION_REPOSITORY:-}" ]; then
         BASE_IMAGE_PATH="$CI_APPLICATION_REPOSITORY"
       else
         BASE_IMAGE_PATH="$CI_REGISTRY_IMAGE"
       fi
 
-      # Final tag:
-      # 1) explicit from workflow (CI_APPLICATION_TAG)
-      # 2) git tag
-      # 3) "latest" on default branch
-      # 4) slug for other branches (only pushed if PUSH_FEATURE_BRANCH=true)
+      # Determine the image tag based on the CI context, in order of priority:
+      # 1. An explicit tag from the workflow rules (CI_APPLICATION_TAG).
+      # 2. The Git tag if this is a tag pipeline (CI_COMMIT_TAG).
+      # 3. "latest" if this is a commit to the default branch.
+      # 4. The branch slug for all other branches.
       if [ -n "${CI_APPLICATION_TAG:-}" ]; then
         IMAGE_TAG="$CI_APPLICATION_TAG"
       elif [ -n "${CI_COMMIT_TAG:-}" ]; then
@@ -63,76 +139,91 @@ stages:
         IMAGE_TAG="$CI_COMMIT_REF_SLUG"
       fi
 
+      # This is the full image name and tag that will be built.
       DOCKER_IMAGE_WITH_TAG="$BASE_IMAGE_PATH:$IMAGE_TAG"
       echo "DOCKER_IMAGE_WITH_TAG=$DOCKER_IMAGE_WITH_TAG"
 
-      # Decide if we will push
+      # Decide whether the built image should be pushed to the registry.
       WILL_PUSH="false"
+      # Automatically push for tags, commits to the default branch, and merge requests.
       if [ -n "${CI_COMMIT_TAG:-}" ] || [ "$CI_COMMIT_REF_NAME" = "$CI_DEFAULT_BRANCH" ] || [ -n "${CI_MERGE_REQUEST_IID:-}" ]; then
         WILL_PUSH="true"
+      # Also push if the PUSH_FEATURE_BRANCH variable is explicitly set to "true".
       elif [ "${PUSH_FEATURE_BRANCH:-false}" = "true" ]; then
         WILL_PUSH="true"
       fi
       echo "WILL_PUSH=$WILL_PUSH"
 
-    # ----- Build (BuildKit) -----
+    # ----- Build (BuildKit) ----- 
     - |
       set -eu
+      # Get the current UTC date for the `created` label.
       BUILD_DATE="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 
+      # The main build command.
       docker build --pull \
+        # Securely pass the GitLab CI token to the build for accessing private resources.
         --secret id=gitlab_token,env=CI_JOB_TOKEN \
+        # Pass in GitLab metadata as build arguments.
         --build-arg CI_REGISTRY="$CI_REGISTRY" \
         --build-arg CI_API_V4_URL="$CI_API_V4_URL" \
         --build-arg CI_PROJECT_ID="$CI_PROJECT_ID" \
+        # Add standard OCI labels for image traceability.
         --label org.opencontainers.image.created="$BUILD_DATE" \
         --label org.opencontainers.image.source="$CI_PROJECT_URL" \
         --label org.opencontainers.image.revision="$CI_COMMIT_SHA" \
         --label org.opencontainers.image.version="$IMAGE_TAG" \
         --label org.opencontainers.image.ref.name="$CI_COMMIT_REF_NAME" \
         --label org.opencontainers.image.vendor="simulogix" \
+        # Specify the Dockerfile, any extra args, the tag, and the build context.
         -f "$DOCKERFILE" $EXTRA_BUILD_ARGS \
         -t "$DOCKER_IMAGE_WITH_TAG" "$CONTEXT"
 
-    # ----- Push (if policy allows) -----
+    # ----- Push (if policy allows) ----- 
     - |
       set -eu
       if [ "$WILL_PUSH" = "true" ]; then
+        echo "Pushing image to registry..."
         docker push "$DOCKER_IMAGE_WITH_TAG"
       else
-        echo "Skipping push per policy (feature branch + PUSH_FEATURE_BRANCH=false)."
+        echo "Skipping push per policy (not a tag, default branch, MR, or PUSH_FEATURE_BRANCH is false)."
       fi
 
-    # ----- Emit IMAGE_REF (digest) for downstream jobs -----
+    # ----- Emit IMAGE_REF (digest) for downstream jobs ----- 
     - |
       set -eu
       IMAGE_REF=""
+      # Check if the image was successfully built.
       if docker image inspect "$DOCKER_IMAGE_WITH_TAG" >/dev/null 2>&1; then
-        # Prefer digest from pushed repo when available; fall back to local metadata
+        # To get the immutable digest, we need to get it from the registry.
+        # We pull the image we just pushed to refresh the local metadata.
         if [ "$WILL_PUSH" = "true" ]; then
           docker pull "$DOCKER_IMAGE_WITH_TAG" >/dev/null 2>&1 || true
         fi
+        # Extract the digest from the image's repository metadata.
         DIGEST="$(docker inspect --format='{{index .RepoDigests 0}}' "$DOCKER_IMAGE_WITH_TAG" | cut -d'@' -f2 || true)"
         if [ -n "$DIGEST" ]; then
+          # The final immutable reference, e.g., my.registry/my/image@sha256:...
           IMAGE_REF="${BASE_IMAGE_PATH}@${DIGEST}"
         fi
       fi
 
-      # Fallback to tag if digest missing (e.g., push skipped)
+      # Fallback to the mutable tag if we couldn't get a digest (e.g., push was skipped).
       if [ -z "$IMAGE_REF" ]; then
         IMAGE_REF="$DOCKER_IMAGE_WITH_TAG"
       fi
 
+      # Create a .env file to pass these variables to subsequent jobs in the pipeline.
       printf 'DOCKER_IMAGE_WITH_TAG=%s\nIMAGE_REF=%s\n' "$DOCKER_IMAGE_WITH_TAG" "$IMAGE_REF" | tee docker.env
 
   artifacts:
-    when: always
+    when: always # Create artifacts even if the job fails.
     reports: {}
-    paths: [ "docker.env" ]
-    expire_in: 1 week
+    paths:
+      # The .env file containing the image references.
+      - "docker.env"
+    expire_in: 1 week # Artifacts will be available for one week.
 
   rules:
-    # Honor your workflow; still allow manual runs
     - when: on_success
 
-# -------------------- Public job that projects can use directly --------------------
