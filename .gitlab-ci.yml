@@ -1,46 +1,23 @@
 # .gitlab-ci.yml (top-level)
 
 include:
-  - local: /.gitlab/containerize.gitlab-ci.yml
+  # - local: /.gitlab/containerize-dependency.gitlab-ci.yml
+  # - local: /.gitlab/containerize.gitlab-ci.yml
   - local: /.gitlab/job-rules.gitlab-ci.yml
+  - local: /.gitlab/Docker.gitlab-ci.yml
   - local: /.gitlab/container-scan.gitlab-ci.yml
-  - local: /.gitlab/secrets.gitlab-ci.yml
-  - local: /.gitlab/promote.gitlab-ci.yml
-  - local: /.gitlab/release.gitlab-ci.yml
+  # - local: /.gitlab/secrets.gitlab-ci.yml
 
-stages: [build, scan, render, promote, release]
 
-workflow:
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
-    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
-      when: never
-    - if: $CI_COMMIT_BRANCH
-    - if: $CI_COMMIT_TAG
+stages: [build, scan]
+
 
 # Global defaults (inherited by all jobs unless overridden)
 default:
   interruptible: true
 
-variables:
-  PUSH_FEATURE_BRANCH: "true"
-
-
-render:helm:
-  image: alpine:3.20
-  stage: render
-  needs: ["build:docker"]
-  dependencies: ["build:docker"]
-  rules:
-    - if: '$CI_COMMIT_BRANCH =~ /^(dev|test|int|prod)$/'
-  before_script:
-    - source docker.env
-    - apk add --no-cache helm
-  script:
-    - helm template myapp helm/myapp --set image.repository=$DOCKER_IMAGE_REPO --set image.digest=$DOCKER_IMAGE_DIGEST > rendered.yaml
-  artifacts:
-    paths:
-      - rendered.yaml
-  environment:
-    name: $CI_COMMIT_BRANCH
-    url: https://$CI_COMMIT_BRANCH.swf.local
+build:docker:
+  extends: .docker_build_template
+  variables:
+    EXTRA_BUILD_ARGS: "--build-arg FOO=bar"
+    PUSH_FEATURE_BRANCH: "true"

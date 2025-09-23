@@ -1,0 +1,142 @@
+workflow:
+  rules:
+    - if: '$CI_COMMIT_TAG'
+      variables:
+        CI_APPLICATION_REPOSITORY: $CI_REGISTRY_IMAGE
+        CI_APPLICATION_TAG: $CI_COMMIT_TAG
+    - if: '$CI_COMMIT_BRANCH =~ /\b(dev|test|int|master)\b/'
+      variables:
+        CI_APPLICATION_REPOSITORY: $CI_REGISTRY_IMAGE/$CI_COMMIT_BRANCH
+        CI_APPLICATION_TAG: latest
+    - if: '$CI_COMMIT_BRANCH =~ /^gmarm-\d+/'
+      variables:
+        CI_APPLICATION_REPOSITORY: $CI_REGISTRY_IMAGE/gmarm
+        CI_APPLICATION_TAG: latest
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: always
+    - when: always
+
+variables:
+  DOCKER_TLS_CERTDIR: ""          # disable TLS for DinD
+  DOCKER_BUILDKIT: "1"
+  PUSH_FEATURE_BRANCH: "false"
+
+stages: [build]
+
+# -------------------------------- Commons --------------------------------
+.before_docker: &before_docker |
+  set -eu
+  echo "$CI_JOB_TOKEN" | docker login -u gitlab-ci-token --password-stdin "$CI_REGISTRY"
+
+# -------------------------------- Build template --------------------------------
+.docker_build_template:
+  stage: build
+  image: docker:24
+  services: ["docker:24-dind"]
+  resource_group: "${CI_PROJECT_PATH_SLUG}:${CI_COMMIT_REF_SLUG}:docker-build"
+  variables:
+    DOCKERFILE: "Dockerfile"
+    CONTEXT: "."
+    EXTRA_BUILD_ARGS: ""
+    ENABLE_PROVENANCE: "false"
+    ENABLE_SBOM: "false"
+  script:
+    - *before_docker
+
+    # ----- Compute meta -----
+    - |
+      set -eu
+      if [ -n "${CI_APPLICATION_REPOSITORY:-}" ]; then
+        BASE_IMAGE_PATH="$CI_APPLICATION_REPOSITORY"
+      else
+        BASE_IMAGE_PATH="$CI_REGISTRY_IMAGE"
+      fi
+
+      if [ -n "${CI_APPLICATION_TAG:-}" ]; then
+        IMAGE_TAG="$CI_APPLICATION_TAG"
+      elif [ -n "${CI_COMMIT_TAG:-}" ]; then
+        IMAGE_TAG="$CI_COMMIT_TAG"
+      elif [ "$CI_COMMIT_REF_NAME" = "$CI_DEFAULT_BRANCH" ]; then
+        IMAGE_TAG="latest"
+      else
+        IMAGE_TAG="$CI_COMMIT_REF_SLUG"
+      fi
+
+      DOCKER_IMAGE_WITH_TAG="$BASE_IMAGE_PATH:$IMAGE_TAG"
+      echo "DOCKER_IMAGE_WITH_TAG=$DOCKER_IMAGE_WITH_TAG"
+
+      WILL_PUSH="false"
+      if [ -n "${CI_COMMIT_TAG:-}" ] || [ "$CI_COMMIT_REF_NAME" = "$CI_DEFAULT_BRANCH" ] || [ -n "${CI_MERGE_REQUEST_IID:-}" ]; then
+        WILL_PUSH="true"
+      elif [ "${PUSH_FEATURE_BRANCH:-false}" = "true" ]; then
+        WILL_PUSH="true"
+      fi
+      echo "WILL_PUSH=$WILL_PUSH"
+
+      SECRET_ARG=""
+      if [ -n "${CI_JOB_TOKEN:-}" ]; then
+        SECRET_ARG="--secret id=gitlab_token,env=CI_JOB_TOKEN"
+      fi
+
+      ATTEST_ARGS=""
+      if [ "${ENABLE_PROVENANCE}" = "true" ]; then
+        ATTEST_ARGS="$ATTEST_ARGS --provenance=mode=max"
+      fi
+      if [ "${ENABLE_SBOM}" = "true" ]; then
+        ATTEST_ARGS="$ATTEST_ARGS --attest=type=sbom"
+      fi
+
+    # ----- Build -----
+    - |
+      set -eu
+      BUILD_DATE="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+
+      docker build --pull \
+        $SECRET_ARG \
+        --build-arg CI_REGISTRY="$CI_REGISTRY" \
+        --build-arg CI_API_V4_URL="$CI_API_V4_URL" \
+        --build-arg CI_PROJECT_ID="$CI_PROJECT_ID" \
+        --label org.opencontainers.image.created="$BUILD_DATE" \
+        --label org.opencontainers.image.source="$CI_PROJECT_URL" \
+        --label org.opencontainers.image.revision="$CI_COMMIT_SHA" \
+        --label org.opencontainers.image.version="$IMAGE_TAG" \
+        --label org.opencontainers.image.ref.name="$CI_COMMIT_REF_NAME" \
+        --label org.opencontainers.image.vendor="simulogix" \
+        $ATTEST_ARGS \
+        -f "$DOCKERFILE" $EXTRA_BUILD_ARGS \
+        -t "$DOCKER_IMAGE_WITH_TAG" "$CONTEXT"
+
+    # ----- Push -----
+    - |
+      set -eu
+      if [ "$WILL_PUSH" = "true" ]; then
+        docker push "$DOCKER_IMAGE_WITH_TAG"
+      else
+        echo "Skipping push per policy."
+      fi
+
+    # ----- Compute IMAGE_REF -----
+    - |
+      set -eu
+      IMAGE_REF=""
+      if [ "$WILL_PUSH" = "true" ]; then
+        docker pull "$DOCKER_IMAGE_WITH_TAG" >/dev/null 2>&1 || true
+      fi
+      if docker image inspect "$DOCKER_IMAGE_WITH_TAG" >/dev/null 2>&1; then
+        DIGEST="$(docker inspect --format='{{index .RepoDigests 0}}' "$DOCKER_IMAGE_WITH_TAG" | cut -d'@' -f2 || true)"
+        [ -n "$DIGEST" ] && IMAGE_REF="${BASE_IMAGE_PATH}@${DIGEST}"
+      fi
+      [ -z "$IMAGE_REF" ] && IMAGE_REF="$DOCKER_IMAGE_WITH_TAG"
+
+      printf 'DOCKER_IMAGE_WITH_TAG=%s\nIMAGE_REF=%s\nCS_IMAGE=%s\n' \
+        "$DOCKER_IMAGE_WITH_TAG" "$IMAGE_REF" "$IMAGE_REF" | tee docker.env
+
+  artifacts:
+    when: always
+    reports:
+      dotenv: docker.env
+    paths: [ "docker.env" ]
+    expire_in: 1 week
+
+  rules:
+    - when: on_success
