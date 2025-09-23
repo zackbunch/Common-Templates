@@ -19,4 +19,4 @@ default:
 build:docker:
   extends: .docker_build_template
   variables:
-    EXTRA_BUILD_ARGS: "--build-arg FOO=bar --target runtime"
+    EXTRA_BUILD_ARGS: "--build-arg FOO=bar"
