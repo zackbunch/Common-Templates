@@ -19,6 +19,6 @@ default:
 build:docker:
   extends: .docker_build_template
   variables:
-    PUSH_FEATURE_BRANCH: "true"
-    BUILD_ARGS: |
-      PACKAGE_URL=${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/sqlcl/0.0.1/sqlcl.tar.gz
+    PUSH_FEATURE_BRANCH: "false"
+    # BUILD_ARGS: |
+    #   PACKAGE_URL=${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/sqlcl/0.0.1/sqlcl.tar.gz
