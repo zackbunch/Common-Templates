@@ -19,4 +19,4 @@ default:
 build:docker:
   extends: .docker_build_template
   variables:
-    PUSH_FEATURE_BRANCH: "false"
+    PUSH_FEATURE_BRANCH: "true"
