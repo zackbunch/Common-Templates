@@ -86,8 +86,6 @@ stages: [build]
       done
       EXTRA_BUILD_ARGS="$BUILD_ARG_FLAGS ${EXTRA_BUILD_ARGS:-}"
 
-      META_FILE="buildx-metadata.json"
-
     # ----- Buildx build (push or load) -----
     - |
       set -eu
@@ -105,7 +103,6 @@ stages: [build]
           $LABELS \
           -f "$DOCKERFILE" $EXTRA_BUILD_ARGS \
           -t "$DOCKER_IMAGE_WITH_TAG" "$CONTEXT" \
-          --metadata-file "$META_FILE" \
           --push
       else
         docker buildx build \
@@ -116,30 +113,24 @@ stages: [build]
           --load
       fi
 
-    # ----- Compute IMAGE_REF (metadata first; safe fallbacks) -----
+    # ----- Compute IMAGE_REF (no metadata/manifest; slice-safe) -----
     - |
       set -eu
       IMAGE_REF=""
 
-      if [ "$WILL_PUSH" = "true" ] && [ -s "$META_FILE" ]; then
-        DIGEST="$(awk -F'"' '/containerimage.digest/ {print $4}' "$META_FILE" || true)"
-        if [ -z "$DIGEST" ]; then
-          DIGEST="$(grep -Eo '"digest":"sha256:[0-9a-f]+' "$META_FILE" | head -n1 | cut -d':' -f3-)"
-          [ -n "$DIGEST" ] && DIGEST="sha256:$DIGEST"
-        fi
-        [ -n "$DIGEST" ] && IMAGE_REF="${BASE_IMAGE_PATH}@${DIGEST}"
+      # Best-effort refresh of local metadata if we pushed
+      if [ "$WILL_PUSH" = "true" ]; then
+        docker pull "$DOCKER_IMAGE_WITH_TAG" >/dev/null 2>&1 || true
       fi
 
-      if [ -z "$IMAGE_REF" ]; then
-        # refresh local metadata if we pushed (ignore failures)
-        [ "$WILL_PUSH" = "true" ] && docker pull "$DOCKER_IMAGE_WITH_TAG" >/dev/null 2>&1 || true
-        FULL_REPO_DIGEST="$(docker image inspect "$DOCKER_IMAGE_WITH_TAG" \
-          --format '{{if .RepoDigests}}{{index .RepoDigests 0}}{{end}}' 2>/dev/null || true)"
-        if [ -n "$FULL_REPO_DIGEST" ]; then
-          IMAGE_REF="${BASE_IMAGE_PATH}@${FULL_REPO_DIGEST#*@}"
-        fi
+      FULL_REPO_DIGEST="$(docker image inspect "$DOCKER_IMAGE_WITH_TAG" \
+        --format '{{if .RepoDigests}}{{index .RepoDigests 0}}{{end}}' 2>/dev/null || true)"
+
+      if [ -n "$FULL_REPO_DIGEST" ]; then
+        IMAGE_REF="${BASE_IMAGE_PATH}@${FULL_REPO_DIGEST#*@}"
       fi
 
+      # Fallback to tag if no digest (e.g., not pushed)
       [ -z "$IMAGE_REF" ] && IMAGE_REF="$DOCKER_IMAGE_WITH_TAG"
 
       printf 'DOCKER_IMAGE_WITH_TAG=%s\nIMAGE_REF=%s\nCS_IMAGE=%s\n' \
