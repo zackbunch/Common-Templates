@@ -1,0 +1,139 @@
+workflow:
+  rules:
+    - if: '$CI_COMMIT_BRANCH =~ /\b(dev|test|int|master)\b/'
+      variables:
+        CI_APPLICATION_REPOSITORY: $CI_REGISTRY_IMAGE/$CI_COMMIT_BRANCH
+        CI_APPLICATION_TAG: latest
+    - if: '$CI_COMMIT_BRANCH =~ /^gmarm-\d+/'
+      variables:
+        CI_APPLICATION_REPOSITORY: $CI_REGISTRY_IMAGE/gmarm
+        CI_APPLICATION_TAG: latest
+    # Fallback for everything else (no push unless opt-in)
+    - when: always
+
+# -------------------- Defaults --------------------
+variables:
+  DOCKER_TLS_CERTDIR: ""        # disable TLS for DinD
+  DOCKER_BUILDKIT: "1"          # enable BuildKit
+  # Allow opt-in pushing from feature branches
+  PUSH_FEATURE_BRANCH: "false"
+
+stages:
+  - build
+
+# -------------------- Common prelude --------------------
+.before_docker: &before_docker
+  - set -eu
+  - echo "$CI_JOB_TOKEN" | docker login -u gitlab-ci-token --password-stdin "$CI_REGISTRY"
+
+# -------------------- Hidden, reusable build template --------------------
+.docker_build_template:
+  stage: build
+  image: docker:24
+  services: [ "docker:24-dind" ]
+  variables:
+    # Override as needed from the including job/repo
+    DOCKERFILE: "Dockerfile"
+    CONTEXT: "."
+    # Optional: space-separated extra args (e.g. "--build-arg FOO=bar --target runtime")
+    EXTRA_BUILD_ARGS: ""
+  script:
+    - *before_docker
+
+    # ----- Compute destination path and tag -----
+    - |
+      set -eu
+      if [ -n "${CI_APPLICATION_REPOSITORY:-}" ]; then
+        BASE_IMAGE_PATH="$CI_APPLICATION_REPOSITORY"
+      else
+        BASE_IMAGE_PATH="$CI_REGISTRY_IMAGE"
+      fi
+
+      # Final tag:
+      # 1) explicit from workflow (CI_APPLICATION_TAG)
+      # 2) git tag
+      # 3) "latest" on default branch
+      # 4) slug for other branches (only pushed if PUSH_FEATURE_BRANCH=true)
+      if [ -n "${CI_APPLICATION_TAG:-}" ]; then
+        IMAGE_TAG="$CI_APPLICATION_TAG"
+      elif [ -n "${CI_COMMIT_TAG:-}" ]; then
+        IMAGE_TAG="$CI_COMMIT_TAG"
+      elif [ "$CI_COMMIT_REF_NAME" = "$CI_DEFAULT_BRANCH" ]; then
+        IMAGE_TAG="latest"
+      else
+        IMAGE_TAG="$CI_COMMIT_REF_SLUG"
+      fi
+
+      DOCKER_IMAGE_WITH_TAG="$BASE_IMAGE_PATH:$IMAGE_TAG"
+      echo "DOCKER_IMAGE_WITH_TAG=$DOCKER_IMAGE_WITH_TAG"
+
+      # Decide if we will push
+      WILL_PUSH="false"
+      if [ -n "${CI_COMMIT_TAG:-}" ] || [ "$CI_COMMIT_REF_NAME" = "$CI_DEFAULT_BRANCH" ] || [ -n "${CI_MERGE_REQUEST_IID:-}" ]; then
+        WILL_PUSH="true"
+      elif [ "${PUSH_FEATURE_BRANCH:-false}" = "true" ]; then
+        WILL_PUSH="true"
+      fi
+      echo "WILL_PUSH=$WILL_PUSH"
+
+    # ----- Build (BuildKit) -----
+    - |
+      set -eu
+      BUILD_DATE="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+
+      docker build --pull \
+        --secret id=gitlab_token,env=CI_JOB_TOKEN \
+        --build-arg CI_REGISTRY="$CI_REGISTRY" \
+        --build-arg CI_API_V4_URL="$CI_API_V4_URL" \
+        --build-arg CI_PROJECT_ID="$CI_PROJECT_ID" \
+        --label org.opencontainers.image.created="$BUILD_DATE" \
+        --label org.opencontainers.image.source="$CI_PROJECT_URL" \
+        --label org.opencontainers.image.revision="$CI_COMMIT_SHA" \
+        --label org.opencontainers.image.version="$IMAGE_TAG" \
+        --label org.opencontainers.image.ref.name="$CI_COMMIT_REF_NAME" \
+        --label org.opencontainers.image.vendor="simulogix" \
+        -f "$DOCKERFILE" $EXTRA_BUILD_ARGS \
+        -t "$DOCKER_IMAGE_WITH_TAG" "$CONTEXT"
+
+    # ----- Push (if policy allows) -----
+    - |
+      set -eu
+      if [ "$WILL_PUSH" = "true" ]; then
+        docker push "$DOCKER_IMAGE_WITH_TAG"
+      else
+        echo "Skipping push per policy (feature branch + PUSH_FEATURE_BRANCH=false)."
+      fi
+
+    # ----- Emit IMAGE_REF (digest) for downstream jobs -----
+    - |
+      set -eu
+      IMAGE_REF=""
+      if docker image inspect "$DOCKER_IMAGE_WITH_TAG" >/dev/null 2>&1; then
+        # Prefer digest from pushed repo when available; fall back to local metadata
+        if [ "$WILL_PUSH" = "true" ]; then
+          docker pull "$DOCKER_IMAGE_WITH_TAG" >/dev/null 2>&1 || true
+        fi
+        DIGEST="$(docker inspect --format='{{index .RepoDigests 0}}' "$DOCKER_IMAGE_WITH_TAG" | cut -d'@' -f2 || true)"
+        if [ -n "$DIGEST" ]; then
+          IMAGE_REF="${BASE_IMAGE_PATH}@${DIGEST}"
+        fi
+      fi
+
+      # Fallback to tag if digest missing (e.g., push skipped)
+      if [ -z "$IMAGE_REF" ]; then
+        IMAGE_REF="$DOCKER_IMAGE_WITH_TAG"
+      fi
+
+      printf 'DOCKER_IMAGE_WITH_TAG=%s\nIMAGE_REF=%s\n' "$DOCKER_IMAGE_WITH_TAG" "$IMAGE_REF" | tee docker.env
+
+  artifacts:
+    when: always
+    reports: {}
+    paths: [ "docker.env" ]
+    expire_in: 1 week
+
+  rules:
+    # Honor your workflow; still allow manual runs
+    - when: on_success
+
+# -------------------- Public job that projects can use directly --------------------

@@ -1,9 +1,10 @@
 # .gitlab-ci.yml (top-level)
 
 include:
-  - local: /.gitlab/containerize-dependency.gitlab-ci.yml
+  # - local: /.gitlab/containerize-dependency.gitlab-ci.yml
   # - local: /.gitlab/containerize.gitlab-ci.yml
   - local: /.gitlab/job-rules.gitlab-ci.yml
+  - local: /.gitlab/Docker.gitlab-ci.yml
   - local: /.gitlab/container-scan.gitlab-ci.yml
   # - local: /.gitlab/secrets.gitlab-ci.yml
 
@@ -15,9 +16,7 @@ stages: [build, scan]
 default:
   interruptible: true
 
-variables:
-  PUSH_LATEST: "false"
-  CI_APPLICATION_TAG: 3.3.0
-  EXTRA_BUILD_ARGS: "NPM_TOKEN=zack SOME_FLAG=true"
-
-
+build:docker:
+  extends: .docker_build_template
+  variables:
+    EXTRA_BUILD_ARGS: "--build-arg FOO=bar --target runtime"
