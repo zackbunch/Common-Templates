@@ -19,5 +19,5 @@ default:
 build:docker:
   extends: .docker_build_template
   variables:
-    PUSH_FEATURE_BRANCH: "true"
-    EXTRA_BUILD_ARGS: "--provenance=false"
+    PUSH_FEATURE_BRANCH: "false"
+

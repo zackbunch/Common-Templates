@@ -30,9 +30,9 @@ stages: [build]
   resource_group: "${CI_PROJECT_PATH_SLUG}:${CI_COMMIT_REF_SLUG}:docker-build"
   variables:
     DOCKERFILE: "Dockerfile"
-    CONTEXT: "."
-    EXTRA_BUILD_ARGS: ""   # raw flags, e.g., "--target runtime" or "--platform linux/amd64"
-    BUILD_ARGS: ""         # user-supplied key=val -> --build-arg key=val
+    CONTEXT: "." 
+    BUILD_ARGS: ""  
+    EXTRA_BUILD_ARGS: "--provenance=false"       
   script:
     - *before_docker
 
