@@ -16,9 +16,9 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends curl ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 
-RUN --mount=type=secret,id=gitlab_token \
-    TOKEN="$(cat /run/secrets/gitlab_token)"; \
-    curl -fsSL --header "JOB-TOKEN: ${TOKEN}" \
-      "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/${PKG_NAME}/${PKG_VERSION}/${PKG_FILE}" \
-    -o "/app/${PKG_FILE}"
+# RUN --mount=type=secret,id=gitlab_token \
+#     TOKEN="$(cat /run/secrets/gitlab_token)"; \
+#     curl -fsSL --header "JOB-TOKEN: ${TOKEN}" \
+#       "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/${PKG_NAME}/${PKG_VERSION}/${PKG_FILE}" \
+#     -o "/app/${PKG_FILE}"
 
