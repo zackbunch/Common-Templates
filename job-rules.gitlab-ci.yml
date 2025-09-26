@@ -1,26 +1,5 @@
-# .gitlab/job-rules.gitlab-ci.yml
-#
-# Reusable job rules — each block is a hidden job that can be referenced with:
-#   rules: !reference [.rule:name-here, rules]
-#
-# NOTES:
-# - "First match wins": GitLab evaluates rules top-to-bottom and stops on the first match.
-# - Always end with an explicit `- when: never` to deny all non-matching cases.
-
 # -------------------------------------------------------------------
-# Workflow skip push pipeline if an MR already exists.
-
-# -------------------------------------------------------------------
-workflow:
-  rules:
-    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS'
-      when: never
-    - if: '$CI_COMMIT_TAG || $CI_PIPELINE_SOURCE == "merge_request_event" || $CI_PIPELINE_SOURCE == "push"'
-      when: always
-    - when: never
-
-# -------------------------------------------------------------------
-# Example: run scans only when an MR targets dev/test/int/prod/main/master
+# Run scans only when an MR targets env branches
 # -------------------------------------------------------------------
 .rule:scan-on-mr-to-env:
   rules:
@@ -94,7 +73,7 @@ workflow:
 # -------------------------------------------------------------------
 .rule:env-branches-only:
   rules:
-    - if: '$CI_COMMIT_BRANCH =~ /^(dev|test|int|main|master)$/'
+    - if: '$CI_COMMIT_BRANCH =~ /^(dev|test|int|prod|main|master)$/'
       when: on_success
     - when: never
 
@@ -122,14 +101,14 @@ workflow:
 # -------------------------------------------------------------------
 .rule:mr-with-label-security-scan:
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_LABELS =~ /(^|, )security-scan(,|$)/'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_LABELS =~ /(^|,)\s*security-scan\s*(,|$)/'
       when: on_success
     - when: never
 
 # -------------------------------------------------------------------
 .rule:skip-draft-mr:
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TITLE =~ /^(Draft|WIP):/i'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TITLE =~ /(?i)^(draft|wip):/'
       when: never
     - when: on_success
 
@@ -166,27 +145,21 @@ workflow:
     - when: never
 
 # -------------------------------------------------------------------
-# Simple build matrix matching your cadence:
-# - Tags: push as release (also :latest)
-# - dev branch: push (suffix=dev)
-# - MR pipelines: build but DO NOT push (keeps registry clean)
-# - Feature pushes: optional push via PUSH_ON_FEATURE (suffix=branch slug)
+# Build matrix (simple, sane defaults)
+# - Tags: push (& latest)
+# - dev branch push
+# - MR: build-only (no push)
+# - Feature pushes: push only if PUSH_ON_FEATURE="true"
 # -------------------------------------------------------------------
 .rule:build-simple:
   rules:
+    # Never run on schedules
     - if: '$CI_PIPELINE_SOURCE == "schedule"'
       when: never
 
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
-      variables:
-        PUSH_IMAGE: "true"
-        TAG_LATEST: "false"
-        # mr-<MR IID>-<pipeline id> keeps tags unique and easy to GC
-        TAG_SUFFIX: "mr-${CI_MERGE_REQUEST_IID}-${CI_PIPELINE_ID}"
-        DEBUG_REASON: "mr pipeline (temp push)"
-
-    # Tags → release push
+    # Release tags → push + latest
     - if: '$CI_COMMIT_TAG'
+      when: on_success
       variables:
         RELEASE_IMAGE: "true"
         PUSH_IMAGE: "true"
@@ -194,44 +167,51 @@ workflow:
         TAG_LATEST: "true"
         DEBUG_REASON: "tag pipeline"
 
-    # MR pipelines → build only (no push)
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
-      variables:
-        PUSH_IMAGE: "false"
-        TAG_SUFFIX: "$CI_COMMIT_REF_SLUG"
-        DEBUG_REASON: "mr pipeline (no push)"
-
-    # dev branch → push
+    # dev branch (post-merge) → push
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "dev"'
+      when: on_success
       variables:
         PUSH_IMAGE: "true"
         TAG_SUFFIX: "dev"
+        TAG_LATEST: "false"
         DEBUG_REASON: "dev branch push"
 
-    # Other branch pushes (features) → toggle push
+    # MR pipelines → build only (no push)
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: on_success
+      variables:
+        PUSH_IMAGE: "false"
+        TAG_SUFFIX: "$CI_COMMIT_REF_SLUG"
+        TAG_LATEST: "false"
+        DEBUG_REASON: "mr pipeline (no push)"
+
+    # Feature branch pushes → toggle push via var
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_TAG == null'
+      when: on_success
       variables:
         PUSH_IMAGE: "$PUSH_ON_FEATURE"
         TAG_SUFFIX: "$CI_COMMIT_REF_SLUG"
+        TAG_LATEST: "false"
         DEBUG_REASON: "feature branch push"
 
-
+    # Fallback
     - when: never
-      variables: { DEBUG_REASON: "no matching build rule" }
+      variables:
+        DEBUG_REASON: "no matching build rule"
 
 # -------------------------------------------------------------------
-# Scans should run on dev merges and on release tags (your cadence)
+# Scans should run on dev merges and on release tags
 # -------------------------------------------------------------------
 .rule:scan-dev-or-tag:
   rules:
-    - if: '$CI_COMMIT_TAG'                                  # release
+    - if: '$CI_COMMIT_TAG'
       when: on_success
-    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "dev"'  # post-merge to dev
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "dev"'
       when: on_success
     - when: never
 
 # -------------------------------------------------------------------
-# (Optional) broader scan trigger when an image likely exists
+# Broader scan trigger when an image likely exists
 # -------------------------------------------------------------------
 .rule:scan-when-image-exists:
   rules:
@@ -246,27 +226,32 @@ workflow:
     - when: never
 
 # -------------------------------------------------------------------
-# Scan on MRs to env branches, or allow manual trigger
+# Scan on MRs automatically; allow manual on default or gmarm-* branches
 # -------------------------------------------------------------------
 .rule:scan-on-mr-or-manual:
   rules:
-    # Run automatically on merge requests
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
       when: on_success
-
-    # Manual trigger on feature branches
-    - if: $CI_COMMIT_BRANCH =~ /^gmarm-.*$/
+    - if: '$CI_COMMIT_BRANCH =~ /^gmarm-[A-Za-z0-9._-]+$/'
       when: manual
       allow_failure: true
-
-    # Manual trigger on default branch
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
       when: manual
       allow_failure: true
-
     - when: never
 
+# -------------------------------------------------------------------
 .rule:scheduled-nightly:
   rules:
-    - if: $CI_PIPELINE_SOURCE == "schedule"
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
       when: on_success
+
+# -------------------------------------------------------------------
+.rule:sast_scan:
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "dev"'
+      when: on_success
+    - if: '$CI_COMMIT_BRANCH =~ /^gmarm-[A-Za-z0-9._-]+$/'
+      when: manual
+    - if: '$CI_COMMIT_BRANCH == "master"'
+      when: manual
