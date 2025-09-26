@@ -1,23 +1,86 @@
-# .gitlab-ci.yml (top-level)
+# .gitlab-ci.yml
+
+workflow:
+  rules:
+    # Release tags → repo at project root, tag = semver
+    - if: '$CI_COMMIT_TAG'
+      variables:
+        CI_APPLICATION_REPOSITORY: '$CI_REGISTRY_IMAGE'
+        CI_APPLICATION_TAG: '$CI_COMMIT_TAG'
+
+    # gmarm-* feature stream → fixed subpath, tag latest
+    # gmarm-* feature stream → fixed subpath, tag latest
+    - if: '$CI_COMMIT_BRANCH =~ /^gmarm-[A-Za-z0-9._-]+$/'
+      variables:
+        CI_APPLICATION_REPOSITORY: '$CI_REGISTRY_IMAGE/gmarm'
+        CI_APPLICATION_TAG: 'latest'
+
+    # env branches → per-branch subpath, tag latest
+    - if: '$CI_COMMIT_BRANCH =~ /\b(dev|test|int|main|master)\b/'
+      variables:
+        CI_APPLICATION_REPOSITORY: '$CI_REGISTRY_IMAGE/$CI_COMMIT_BRANCH'
+        CI_APPLICATION_TAG: 'latest'
+
+    # Always run for MRs (so the pipeline exists even if above didn’t match)
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: always
+
+    # Fallback: always create a pipeline
+    - when: always
 
 include:
-  # - local: /.gitlab/containerize-dependency.gitlab-ci.yml
-  # - local: /.gitlab/containerize.gitlab-ci.yml
-  - local: /.gitlab/job-rules.gitlab-ci.yml
-  - local: /.gitlab/Docker.gitlab-ci.yml
-  - local: /.gitlab/container-scan.gitlab-ci.yml
-  # - local: /.gitlab/secrets.gitlab-ci.yml
+  - local: job-rules.gitlab-ci.yml
+  - local: Docker.gitlab-ci.yml
+  - local: container-scan.gitlab-ci.yml
+  - local: secrets.gitlab-ci.yml
 
+stages: [build, scan, deploy]
 
-stages: [build, scan]
-
-
-# Global defaults (inherited by all jobs unless overridden)
 default:
   interruptible: true
 
+# ---------------- Build ----------------
 build:docker:
-  extends: .docker_build_template
+  extends: [".docker_build_template"]
+  rules: !reference [.rule:build-simple, rules]
+  before_script:
+    - echo "DBG repo=$CI_APPLICATION_REPOSITORY tag=$CI_APPLICATION_TAG"
   variables:
     PUSH_FEATURE_BRANCH: "true"
+    CI_APPLICATION_TAG: 0.0.1
+    BUILD_ARGS: |
+      CI_SERVER_URL=${CI_SERVER_URL}
+      CI_REGISTRY=${CI_REGISTRY}
 
+# ---------------- Scans ----------------
+scan:fortify:
+  stage: scan
+  allow_failure: true
+  rules: !reference [.rule:sast_scan, rules]
+  script:
+    - echo "Running Fortify scanning"
+
+# Secrets scanners come from secrets.gitlab-ci.yml include
+
+# ---------------- Deploy ----------------
+deploy_dev:
+  stage: deploy
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "dev" || $CI_COMMIT_BRANCH =~ /^gmarm-[A-Za-z0-9._-]+$/'
+      when: on_success
+  script:
+    - echo "Deploying to Dev"
+
+# ---------------- Release ----------------
+trigger_release:
+  stage: deploy
+  rules:
+    - if: '$CI_COMMIT_TAG'
+  needs:
+    - build:docker
+  variables:
+    # Pass the image reference from the build job to the child pipeline
+    RELEASE_IMAGE_REF: '$IMAGE_REF'
+  trigger:
+    include: release.gitlab-ci.yml
+    strategy: depend
