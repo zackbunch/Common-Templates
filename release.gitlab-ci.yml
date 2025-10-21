@@ -1,6 +1,6 @@
-release:
+gitlab_release:
   stage: release
-  rules: !reference [.rule:tag-only, rules]
+  rules: !reference [.rule:tag-only, rules]  # runs only on tag pipelines
   image:
     name: registry.gitlab.com/gitlab-org/release-cli:latest
     entrypoint: [""]
@@ -12,69 +12,52 @@ release:
     # Require SPRINT
     - |
       if [ -z "${SPRINT:-}" ]; then
-        echo "ERROR: Missing required variable SPRINT. Set it at pipeline/trigger scope (e.g., variables: { SPRINT: 125 })."
+        echo "ERROR: Missing required variable SPRINT (set at pipeline/trigger)."
         exit 1
       fi
 
-    # VERSION file must exist and match tag exactly (no 'v' prefixes allowed)
+    # VERSION must exist and exactly match the tag (no 'v' prefix in your scheme)
     - |
-      if [ ! -f VERSION ]; then
-        echo "ERROR: VERSION file missing."
-        exit 1
-      fi
+      test -f VERSION || { echo "ERROR: VERSION file missing"; exit 1; }
       VERSION_FILE="$(tr -d ' \t\r\n' < VERSION)"
-      if [ -z "$VERSION_FILE" ]; then
-        echo "ERROR: VERSION file is empty."
-        exit 1
-      fi
-      echo "$VERSION_FILE" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.]+)?$' || {
-        echo "ERROR: VERSION not semver-ish (no 'v' prefix): '$VERSION_FILE'"; exit 1; }
+      test -n "$VERSION_FILE" || { echo "ERROR: VERSION file is empty"; exit 1; }
+      echo "$VERSION_FILE" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.]+)?$' \
+        || { echo "ERROR: VERSION not semver-like: '$VERSION_FILE'"; exit 1; }
       if [ "$CI_COMMIT_TAG" != "$VERSION_FILE" ]; then
-        echo "ERROR: Tag ($CI_COMMIT_TAG) does not match VERSION ($VERSION_FILE)."
+        echo "ERROR: Tag ($CI_COMMIT_TAG) does not match VERSION ($VERSION_FILE)"
         exit 1
       fi
-
-    # Ensure the tagged commit actually contains that VERSION value
-    - |
       VERSION_AT_TAG="$(git show "$CI_COMMIT_TAG:VERSION" | tr -d ' \t\r\n')"
       if [ "$VERSION_AT_TAG" != "$VERSION_FILE" ]; then
-        echo "ERROR: VERSION in tagged commit ('$VERSION_AT_TAG') != working tree ('$VERSION_FILE')."
-        echo "Commit VERSION=$VERSION_FILE before tagging."
+        echo "ERROR: VERSION in tagged commit ('$VERSION_AT_TAG') != working tree ('$VERSION_FILE')"
         exit 1
       fi
 
-    # Build release notes (CHANGELOG slice or fallback)
+    # Build notes from CHANGELOG (fallback to a simple line)
     - |
       if [ -f CHANGELOG.md ]; then
         awk 'BEGIN{p=0} /^## /{if(p) exit; p=1} p' CHANGELOG.md > "$RELEASE_NOTES_FILE" || true
       fi
       [ -s "$RELEASE_NOTES_FILE" ] || printf "Created by CI for %s (%s)\n" "$CI_COMMIT_TAG" "$CI_COMMIT_SHA" > "$RELEASE_NOTES_FILE"
 
-    # Compose release name after validations
     - export RELEASE_NAME="Version ${CI_COMMIT_TAG} Release - Sprint ${SPRINT}"
-
   script:
     # If a release for this tag exists, update; else create
     - |
-      if release-cli list | grep -qx "$CI_COMMIT_TAG"; then
-        echo "Release exists; updating ${CI_COMMIT_TAG}"
+      if release-cli get --tag-name "$CI_COMMIT_TAG" >/dev/null 2>&1; then
+        echo "Updating release ${CI_COMMIT_TAG}"
         release-cli update \
-          --name "$RELEASE_NAME" \
           --tag-name "$CI_COMMIT_TAG" \
+          --name "$RELEASE_NAME" \
           --description "$RELEASE_NOTES_FILE"
       else
         echo "Creating release ${CI_COMMIT_TAG}"
         release-cli create \
-          --name "$RELEASE_NAME" \
           --tag-name "$CI_COMMIT_TAG" \
           --ref "$CI_COMMIT_SHA" \
+          --name "$RELEASE_NAME" \
           --description "$RELEASE_NOTES_FILE"
       fi
-    # Optional: attach assets/links (repeat flag for multiple)
-    # - release-cli update \
-    #     --tag-name "$CI_COMMIT_TAG" \
-    #     --assets-link "{\"name\":\"linux_amd64\",\"url\":\"${CI_PROJECT_URL}/-/jobs/${CI_JOB_ID}/artifacts/download\"}"
-
   retry:
     max: 1
     when: [api_failure, runner_system_failure, unknown_failure]
