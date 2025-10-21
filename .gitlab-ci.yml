@@ -33,7 +33,7 @@ include:
   - local: Docker.gitlab-ci.yml
   - local: container-scan.gitlab-ci.yml
   - local: secrets.gitlab-ci.yml
-  - local: glab-release.gitlab-ci.yml
+  - local: release.gitlab-ci.yml
 
 
 stages: [build, scan, release, deploy]
