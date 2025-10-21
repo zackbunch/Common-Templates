@@ -29,6 +29,8 @@ workflow:
 
 include:
   - local: /.gitlab/templates/rules.gitlab-ci.yml
+  - local: /.gitlab/templates/docker.gitlab-ci.yml
+  - local: /.gitlab/templates/build.gitlab-ci.yml
   - local: /.gitlab/templates/secrets.gitlab-ci.yml
   - local: /.gitlab/templates/release.gitlab-ci.yml
 
@@ -42,4 +44,7 @@ default:
 
 variables:
   SPRINT: 125
+  BUILD_ARGS: |
+    FOO=${CI_REGISTRY}
+    BAR=${CI_COMMIT_SHA}
 
