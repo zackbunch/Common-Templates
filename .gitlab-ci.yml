@@ -29,7 +29,7 @@ workflow:
 
 include:
   - local: /.gitlab/templates/rules.gitlab-ci.yml
-  - local: /.gitlab/templates/secrets.gitlab-ci.yml
+  # - local: /.gitlab/templates/secrets.gitlab-ci.yml
   - local: /.gitlab/templates/release.gitlab-ci.yml
 
 
