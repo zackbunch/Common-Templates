@@ -2,14 +2,14 @@ gitlab_release:
   stage: release
   rules: !reference [.rule:push-to-dev-branch, rules]
   image:
-    name: $CI_TEMPLATE_REGISTRY_HOST/gitlab-org/release-cli:latest
+    name: registry.gitlab.com/gitlab-org/release-cli:0.21.0
     entrypoint: [""]
   variables:
     RELEASE_NOTES_FILE: "release_notes.md"
   before_script:
     - set -euo pipefail
 
-    # Guard: only proceed for merge commits
+    # Only proceed for merge commits (prevents accidental releases on plain pushes)
     - |
       PARENTS="$(git rev-list --parents -n 1 "$CI_COMMIT_SHA" | wc -w | tr -d ' ')"
       if [ "$PARENTS" -lt 2 ]; then
@@ -24,44 +24,37 @@ gitlab_release:
         exit 1
       fi
 
-    # VERSION must exist and exactly match
+    # VERSION must exist and be semver-like (no 'v' prefix in your scheme)
     - |
       test -f VERSION || { echo "ERROR: VERSION file missing"; exit 1; }
       VERSION_FILE="$(tr -d ' \t\r\n' < VERSION)"
       test -n "$VERSION_FILE" || { echo "ERROR: VERSION file is empty"; exit 1; }
       echo "$VERSION_FILE" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.]+)?$' \
         || { echo "ERROR: VERSION not semver-like: '$VERSION_FILE'"; exit 1; }
-      if [ "$CI_COMMIT_TAG" != "$VERSION_FILE" ]; then
-        echo "ERROR: Tag ($CI_COMMIT_TAG) does not match VERSION ($VERSION_FILE)"
-        exit 1
-      fi
-      VERSION_AT_TAG="$(git show "$CI_COMMIT_TAG:VERSION" | tr -d ' \t\r\n')"
-      if [ "$VERSION_AT_TAG" != "$VERSION_FILE" ]; then
-        echo "ERROR: VERSION in tagged commit ('$VERSION_AT_TAG') != working tree ('$VERSION_FILE')"
-        exit 1
-      fi
 
     # Build notes from CHANGELOG (fallback to a simple line)
     - |
       if [ -f CHANGELOG.md ]; then
         awk 'BEGIN{p=0} /^## /{if(p) exit; p=1} p' CHANGELOG.md > "$RELEASE_NOTES_FILE" || true
       fi
-      [ -s "$RELEASE_NOTES_FILE" ] || printf "Created by CI for %s (%s)\n" "$CI_COMMIT_TAG" "$CI_COMMIT_SHA" > "$RELEASE_NOTES_FILE"
+      [ -s "$RELEASE_NOTES_FILE" ] || printf "Created by CI for %s (%s)\n" "$CI_COMMIT_BRANCH" "$CI_COMMIT_SHA" > "$RELEASE_NOTES_FILE"
 
-    - export RELEASE_NAME="Version ${CI_COMMIT_TAG} Release - Sprint ${SPRINT}"
+    # Compose release name
+    - export RELEASE_NAME="Version ${VERSION_FILE} Release - Sprint ${SPRINT}"
+
   script:
-    # If a release for this tag exists, update; else create
+    # Update if release exists; else create (creating tag ${VERSION_FILE} at this commit)
     - |
-      if release-cli get --tag-name "$CI_COMMIT_TAG" >/dev/null 2>&1; then
-        echo "Updating release ${CI_COMMIT_TAG}"
+      if release-cli get --tag-name "$VERSION_FILE" >/dev/null 2>&1; then
+        echo "Updating release $VERSION_FILE"
         release-cli update \
-          --tag-name "$CI_COMMIT_TAG" \
+          --tag-name "$VERSION_FILE" \
           --name "$RELEASE_NAME" \
           --description "$RELEASE_NOTES_FILE"
       else
-        echo "Creating release ${CI_COMMIT_TAG}"
+        echo "Creating release and tag $VERSION_FILE at $CI_COMMIT_SHA"
         release-cli create \
-          --tag-name "$CI_COMMIT_TAG" \
+          --tag-name "$VERSION_FILE" \
           --ref "$CI_COMMIT_SHA" \
           --name "$RELEASE_NAME" \
           --description "$RELEASE_NOTES_FILE"
