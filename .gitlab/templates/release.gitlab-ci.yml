@@ -2,7 +2,7 @@ gitlab_release:
   stage: release
   rules: !reference [.rule:push-to-dev-branch, rules]
   image:
-    name: registry.gitlab.com/gitlab-org/release-cli:0.21.0
+    name: registry.gitlab.com/gitlab-org/release-cli:latest
     entrypoint: [""]
   variables:
     RELEASE_NOTES_FILE: "release_notes.md"
