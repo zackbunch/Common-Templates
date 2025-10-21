@@ -28,15 +28,13 @@ gitlab_release:
         release-cli update \
           --name "$RELEASE_NAME" \
           --tag-name "$CI_COMMIT_TAG" \
-          --description "$RELEASE_NOTES_FILE" \
-          --released-at
+          --description "$RELEASE_NOTES_FILE"
       else
         release-cli create \
           --name "$RELEASE_NAME" \
           --tag-name "$CI_COMMIT_TAG" \
           --ref "$CI_COMMIT_SHA" \
-          --description "$RELEASE_NOTES_FILE" \
-          --released-at
+          --description "$RELEASE_NOTES_FILE"
       fi
     # Optional: attach assets/links (repeat flag for multiple)
     # - release-cli create/update ... \
