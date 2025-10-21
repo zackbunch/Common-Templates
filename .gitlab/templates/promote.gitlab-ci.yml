@@ -1,0 +1,43 @@
+# Generic promotion (pull -> tag -> push)
+.promote_template:
+  extends: .docker_base
+  stage: build
+  variables:
+    PROMOTE_FROM: ""     # e.g., dev
+    PROMOTE_TO: ""       # e.g., int
+  script: |
+    set -euo pipefail
+    [ -f VERSION ] || { echo "VERSION file not found"; exit 1; }
+    RC="$(cat VERSION).rc"
+
+    SRC="${CI_REGISTRY_IMAGE}/${PROMOTE_FROM}:${RC}"
+    DST="${CI_REGISTRY_IMAGE}/${PROMOTE_TO}:${RC}"
+
+    echo "Source: ${SRC}"
+    echo "Dest:   ${DST}"
+
+    docker pull "${SRC}"
+    docker tag  "${SRC}" "${DST}"
+    docker push "${DST}"
+
+    echo "IMAGE_REF=${DST}" > image.env
+  artifacts:
+    paths: [image.env]
+    reports: { dotenv: image.env }
+    expire_in: 1 day
+
+
+# promotions
+promote:dev_to_int:
+  extends: .promote_template
+  variables: { PROMOTE_FROM: "dev", PROMOTE_TO: "int" }
+  rules:
+    - !reference [.rule:mr-to-int, rules]
+    - !reference [.rule:push-int, rules]
+
+promote:int_to_test:
+  extends: .promote_template
+  variables: { PROMOTE_FROM: "int", PROMOTE_TO: "test" }
+  rules:
+    - !reference [.rule:mr-to-test, rules]
+    - !reference [.rule:push-test, rules]
