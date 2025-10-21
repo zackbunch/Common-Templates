@@ -1,6 +1,6 @@
 gitlab_release:
   stage: release
-  rules: !reference [.rule:tags-only, rules]  # runs only on tag pipelines
+  rules: !reference [.rule:tag-only, rules]  # runs only on tag pipelines
   image:
     name: registry.gitlab.com/gitlab-org/release-cli:latest
     entrypoint: [""]
