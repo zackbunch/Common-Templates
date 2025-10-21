@@ -10,11 +10,20 @@ gitlab_release:
       when: on_success
     - when: never
   variables:
-    SPRINT: "124"
-    RELEASE_NAME: "Version ${CI_COMMIT_TAG} Release - Sprint ${SPRINT}"
+    # Must be provided from pipeline or parent include
+    SPRINT: ""
     RELEASE_NOTES_FILE: "release_notes.md"
   before_script:
     - set -euo pipefail
+    # Validate required variables
+    - |
+      if [ -z "${SPRINT}" ]; then
+        echo "ERROR: Missing required variable SPRINT."
+        echo "Set it in your pipeline or trigger (e.g., variables: { SPRINT: 45 })."
+        exit 1
+      fi
+    - export RELEASE_NAME="Version ${CI_COMMIT_TAG} Release - Sprint ${SPRINT}"
+      echo "Release name ${RELEASE_NAME}"
     # Build notes file from CHANGELOG (fallback to a simple line)
     - |
       if [ -f CHANGELOG.md ]; then
@@ -25,20 +34,19 @@ gitlab_release:
     # Create if missing; otherwise update (idempotent reruns)
     - |
       if release-cli list | grep -qx "$CI_COMMIT_TAG"; then
+        echo "Release ${CI_COMMIT_TAG} exists — updating..."
         release-cli update \
           --name "$RELEASE_NAME" \
           --tag-name "$CI_COMMIT_TAG" \
           --description "$RELEASE_NOTES_FILE"
       else
+        echo "Creating release ${CI_COMMIT_TAG}..."
         release-cli create \
           --name "$RELEASE_NAME" \
           --tag-name "$CI_COMMIT_TAG" \
           --ref "$CI_COMMIT_SHA" \
           --description "$RELEASE_NOTES_FILE"
       fi
-    # Optional: attach assets/links (repeat flag for multiple)
-    # - release-cli create/update ... \
-    #     --assets-link "{\"name\":\"linux_amd64\",\"url\":\"${CI_PROJECT_URL}/-/jobs/${CI_JOB_ID}/artifacts/download\"}"
   retry:
     max: 1
     when: [api_failure, runner_system_failure, unknown_failure]
