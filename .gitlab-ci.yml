@@ -32,6 +32,7 @@ include:
   - local: /.gitlab/templates/docker.gitlab-ci.yml
   - local: /.gitlab/templates/build.gitlab-ci.yml
   - local: /.gitlab/templates/secrets.gitlab-ci.yml
+  - local: /.gitlab/templates/container-scan.gitlab-ci.yml
   - local: /.gitlab/templates/release.gitlab-ci.yml
 
 

@@ -1,0 +1,29 @@
+# .gitlab/container-scan.gitlab-ci.yml (child)
+stages: [scan]
+
+scan:container:
+  stage: scan
+  image: "$CI_TEMPLATE_REGISTRY_HOST/security-products/container-scanning:8"
+  rules: !reference [.rule:container_scanning, rules]
+
+  variables:
+    GIT_STRATEGY: none
+  before_script:
+    - set -eu
+    - |
+      if [ -z "${IMAGE_REF:-}" ] || [ "${IMAGE_REF}" = "skipped" ]; then
+        echo "No IMAGE_REF provided; skipping container scan."
+        exit 0
+      fi
+      export CS_IMAGE="${IMAGE_REF}"
+      echo "Scanning image: ${CS_IMAGE}"
+  script:
+    - gtcs scan
+  artifacts:
+    access: developer
+    reports:
+      container_scanning: gl-container-scanning-report.json
+      cyclonedx: "**/gl-sbom-*.cdx.json"
+    paths:
+      - gl-container-scanning-report.json
+      - "**/gl-sbom-*.cdx.json"
