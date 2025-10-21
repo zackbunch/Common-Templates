@@ -11,7 +11,7 @@ gitlab_release:
     - when: never
   variables:
     SPRINT: "124"
-    RELEASE_NAME: "Release ${CI_COMMIT_TAG} - Sprint ${SPRINT}"
+    RELEASE_NAME: "Version ${CI_COMMIT_TAG} Release - Sprint ${SPRINT}"
     RELEASE_NOTES_FILE: "release_notes.md"
   before_script:
     - set -euo pipefail
