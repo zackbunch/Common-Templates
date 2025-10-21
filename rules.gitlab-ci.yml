@@ -1,0 +1,95 @@
+# .gitlab/templates/rules.yml
+
+# Common/Composables ---------------------------------------------------------
+
+.rule:mr:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: on_success
+    - when: never
+
+.rule:protected-push:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push" && ($CI_COMMIT_BRANCH == "dev" || $CI_COMMIT_BRANCH == "int" || $CI_COMMIT_BRANCH == "test" || $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH)'
+      when: on_success
+    - when: never
+
+.rule:gmarm-manual:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH =~ /^gmarm-[A-Za-z0-9._-]+$/'
+      when: manual
+      allow_failure: true
+    - when: never
+
+.rule:tags-only:
+  rules:
+    - if: '$CI_COMMIT_TAG'
+      when: always
+    - when: never
+
+# Feature/Branch Specific ----------------------------------------------------
+
+.rule:feature-push-no-mr:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_OPEN_MERGE_REQUESTS == null && $CI_COMMIT_BRANCH =~ /^gmarm-[A-Za-z0-9._-]+$/'
+      when: always
+    - when: never
+
+.rule:mr-to-dev:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ /^gmarm-[A-Za-z0-9._-]+$/ && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "dev"'
+      when: always
+    - when: never
+
+.rule:mr-to-int:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "int"'
+      when: always
+    - when: never
+
+.rule:mr-to-test:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "test"'
+      when: always
+    - when: never
+
+.rule:push-int:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "int"'
+      when: always
+    - when: never
+
+.rule:push-test:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "test"'
+      when: always
+    - when: never
+
+# Scanning Policies ----------------------------------------------------------
+
+.rule:secret_detection:
+  rules:
+    # Gate MRs (blocking unless job sets allow_failure: true)
+    - !reference [.rule:mr, rules]
+    # Protected branches
+    - !reference [.rule:protected-push, rules]
+    # Optional on default branch if you want it manual instead of auto, flip this to manual
+    - when: never
+
+.rule:container_scanning:
+  rules:
+    # Always on MRs (non-blocking recommend at first)
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: on_success
+      allow_failure: true
+    # Auto on dev
+    - if: '$CI_COMMIT_BRANCH == "dev"'
+      when: on_success
+      allow_failure: true
+    # Manual on gmarm
+    - !reference [.rule:gmarm-manual, rules]
+    # Manual on test/int/default
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH || $CI_COMMIT_BRANCH == "test" || $CI_COMMIT_BRANCH == "int"'
+      when: manual
+      allow_failure: true
+    - when: never

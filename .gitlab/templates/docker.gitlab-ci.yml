@@ -1,0 +1,82 @@
+# .gitlab/templates/docker.yml
+
+.docker_base:
+  image: docker:24
+  services: ["docker:24-dind"]
+  variables:
+    DOCKER_TLS_CERTDIR: ""
+    DOCKER_DRIVER: overlay2
+    DOCKER_BUILDKIT: "1"
+    GIT_DEPTH: "0"
+  before_script:
+    - |
+      set -eu
+      if [ -n "${CI_JOB_TOKEN-}" ]; then
+        echo "$CI_JOB_TOKEN" | docker login -u gitlab-ci-token --password-stdin "$CI_REGISTRY"
+      elif [ -n "${CI_REGISTRY_USER-}" ] && [ -n "${CI_REGISTRY_PASSWORD-}" ]; then
+        echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+      else
+        echo "No registry credentials (CI_JOB_TOKEN or CI_REGISTRY_USER/PASSWORD) found"
+        exit 1
+      fi
+
+# Reusable pre-step that normalizes BUILD_ARGS -> $BUILD_ARGS_FLAGS
+.before:build-args:
+  before_script:
+    - !reference [.docker_base, before_script]
+    - |
+      set -eu
+      BUILD_ARGS_FLAGS=""
+      if [ -n "${BUILD_ARGS:-}" ]; then
+        # Treat BUILD_ARGS as space/newline-separated KEY=VAL entries
+        for kv in $(printf '%s\n' "${BUILD_ARGS}" | tr ' ' '\n'); do
+          [ -z "$kv" ] && continue
+          BUILD_ARGS_FLAGS="$BUILD_ARGS_FLAGS --build-arg $kv"
+        done
+      fi
+      export BUILD_ARGS_FLAGS
+      echo "Using build args: ${BUILD_ARGS_FLAGS:-<none>}"
+
+.build_template:
+  extends: .docker_base
+  stage: build
+  variables:
+    CONTEXT: "."
+    DOCKERFILE: "Dockerfile"
+  before_script:
+    - !reference [.before:build-args, before_script]
+  after_script:
+    - set -euo pipefail
+    - . image.env
+    - echo "Digest/manifest for ${IMAGE_REF}"
+    - docker buildx version || true
+    - echo "$CI_JOB_TOKEN" | docker login -u gitlab-ci-token --password-stdin "$CI_REGISTRY"
+    - docker buildx imagetools inspect "${IMAGE_REF}"
+
+# Generic promotion (pull -> tag -> push)
+.promote_template:
+  extends: .docker_base
+  stage: build
+  variables:
+    PROMOTE_FROM: ""     # e.g., dev
+    PROMOTE_TO: ""       # e.g., int
+  script: |
+    set -euo pipefail
+    [ -f VERSION ] || { echo "VERSION file not found"; exit 1; }
+    RC="$(cat VERSION).rc"
+
+    SRC="${CI_REGISTRY_IMAGE}/${PROMOTE_FROM}:${RC}"
+    DST="${CI_REGISTRY_IMAGE}/${PROMOTE_TO}:${RC}"
+
+    echo "Source: ${SRC}"
+    echo "Dest:   ${DST}"
+
+    docker pull "${SRC}"
+    docker tag  "${SRC}" "${DST}"
+    docker push "${DST}"
+
+    echo "IMAGE_REF=${DST}" > image.env
+  artifacts:
+    paths: [image.env]
+    reports: { dotenv: image.env }
+    expire_in: 1 day

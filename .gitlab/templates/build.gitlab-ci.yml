@@ -1,0 +1,15 @@
+build:gmarm:
+  extends: .build_template
+  rules: !reference [.rule:feature-push-no-mr, rules]
+  script: |
+    set -euo pipefail
+    CLEAN_TAG="$(printf '%s' "${CI_COMMIT_BRANCH#gmarm-}" | sed -E 's|[/_]+|-|g')"
+    IMAGE_REF="${CI_REGISTRY_IMAGE}/gmarm:${CLEAN_TAG}"
+    docker build -f "$DOCKERFILE" -t "${IMAGE_REF}" ${BUILD_ARGS_FLAGS:-} "$CONTEXT"
+    docker push "${IMAGE_REF}"
+    echo "IMAGE_REF=${IMAGE_REF}" > image.env
+    export IMAGE_REF=${IMAGE_REF}
+  artifacts:
+    paths: [image.env]
+    reports: { dotenv: image.env }
+    expire_in: 24h
