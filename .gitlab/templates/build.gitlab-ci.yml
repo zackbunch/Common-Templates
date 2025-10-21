@@ -13,3 +13,20 @@ build:gmarm:
     paths: [image.env]
     reports: { dotenv: image.env }
     expire_in: 24h
+
+
+# dev RC on MR
+build:release-candidate:
+  extends: .build_template
+  rules: !reference [.rule:mr-to-dev, rules]
+  script: |
+    set -euo pipefail
+    [ -f VERSION ] || { echo "VERSION file not found"; exit 1; }
+    RC="$(cat VERSION).rc"
+    IMAGE_REF="${CI_REGISTRY_IMAGE}/dev:${RC}"
+    docker build -f "$DOCKERFILE" -t "${IMAGE_REF}" ${BUILD_ARGS_FLAGS:-} "$CONTEXT"
+    docker push "${IMAGE_REF}"
+    echo "IMAGE_REF=${IMAGE_REF}" > image.env
+  artifacts:
+    reports: { dotenv: image.env }
+    expire_in: 24h
