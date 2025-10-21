@@ -33,11 +33,17 @@ include:
   - local: Docker.gitlab-ci.yml
   - local: container-scan.gitlab-ci.yml
   - local: secrets.gitlab-ci.yml
+  - local: glab-release.gitlab-ci.yml
 
 stages: [build, scan, deploy]
 
 default:
   interruptible: true
+  tags:
+    - dock_exec_bash
+
+variables:
+  SPRINT: "125"
 
 # ---------------- Build ----------------
 build:docker:
@@ -47,7 +53,7 @@ build:docker:
     - echo "DBG repo=$CI_APPLICATION_REPOSITORY tag=$CI_APPLICATION_TAG"
   variables:
     PUSH_FEATURE_BRANCH: "true"
-    CI_APPLICATION_TAG: 0.0.1
+    CI_APPLICATION_TAG: 0.0.2
     BUILD_ARGS: |
       CI_SERVER_URL=${CI_SERVER_URL}
       CI_REGISTRY=${CI_REGISTRY}

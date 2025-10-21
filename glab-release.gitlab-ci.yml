@@ -1,0 +1,45 @@
+gitlab_release:
+  stage: deploy
+  image:
+    name: registry.gitlab.com/gitlab-org/release-cli:0.21.0
+    entrypoint: [""]
+  rules:
+    - if: '$GITLAB_RELEASE_DISABLED =~ /(?i)true/'
+      when: never
+    - if: '$CI_COMMIT_TAG && $CI_COMMIT_REF_PROTECTED == "true" && $CI_COMMIT_TAG =~ /^v?\d+\.\d+\.\d+(?:[-+].*)?$/'
+      when: on_success
+    - when: never
+  variables:
+    SPRINT: "124"
+    RELEASE_NAME: "Release ${CI_COMMIT_TAG} - Sprint ${SPRINT}"
+    RELEASE_NOTES_FILE: "release_notes.md"
+  before_script:
+    - set -euo pipefail
+    # Build notes file from CHANGELOG (fallback to a simple line)
+    - |
+      if [ -f CHANGELOG.md ]; then
+        awk 'BEGIN{p=0} /^## /{if(p) exit; p=1} p' CHANGELOG.md > "$RELEASE_NOTES_FILE" || true
+      fi
+      [ -s "$RELEASE_NOTES_FILE" ] || printf "Created by CI for %s (%s)\n" "$CI_COMMIT_TAG" "$CI_COMMIT_SHA" > "$RELEASE_NOTES_FILE"
+  script:
+    # Create if missing; otherwise update (idempotent reruns)
+    - |
+      if release-cli list | grep -qx "$CI_COMMIT_TAG"; then
+        release-cli update \
+          --name "$RELEASE_NAME" \
+          --tag-name "$CI_COMMIT_TAG" \
+          --description-file "$RELEASE_NOTES_FILE"
+      else
+        release-cli create \
+          --name "$RELEASE_NAME" \
+          --tag-name "$CI_COMMIT_TAG" \
+          --ref "$CI_COMMIT_SHA" \
+          --description-file "$RELEASE_NOTES_FILE"
+      fi
+    # Optional: attach assets/links (repeat flag for multiple)
+    # - release-cli create/update ... \
+    #     --assets-link "{\"name\":\"linux_amd64\",\"url\":\"${CI_PROJECT_URL}/-/jobs/${CI_JOB_ID}/artifacts/download\"}"
+  retry:
+    max: 1
+    when: [api_failure, runner_system_failure, unknown_failure]
+  allow_failure: false
