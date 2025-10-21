@@ -93,3 +93,10 @@
       when: manual
       allow_failure: true
     - when: never
+
+# .gitlab/templates/rules.gitlab-ci.yml
+.rule:push-to-dev-branch:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_TAG == null && $CI_COMMIT_BRANCH == "dev"'
+      when: on_success
+    - when: never

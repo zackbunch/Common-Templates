@@ -30,3 +30,29 @@ build:release-candidate:
   artifacts:
     reports: { dotenv: image.env }
     expire_in: 24h
+
+build:final-dev:
+  extends: .build_template
+  rules: !reference [.rule:push-to-dev-branch, rules]
+  script: |
+    set -euo pipefail
+
+    # Guard: only proceed for merge commits
+    PARENTS="$(git rev-list --parents -n 1 "$CI_COMMIT_SHA" | wc -w | tr -d ' ')"
+    if [ "$PARENTS" -lt 2 ]; then
+      echo "Not a merge commit; skipping final image build."
+      exit 0
+    fi
+
+    [ -f VERSION ] || { echo "ERROR: VERSION file missing"; exit 1; }
+    VERSION_FILE="$(tr -d ' \t\r\n' < VERSION)"
+    echo "$VERSION_FILE" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.]+)?$' \
+      || { echo "ERROR: VERSION not semver-like: '$VERSION_FILE'"; exit 1; }
+
+    IMAGE_REF="${CI_REGISTRY_IMAGE}/dev:${VERSION_FILE}"
+    docker build -f "$DOCKERFILE" -t "${IMAGE_REF}" ${BUILD_ARGS_FLAGS:-} "$CONTEXT"
+    docker push "${IMAGE_REF}"
+    echo "IMAGE_REF=${IMAGE_REF}" > image.env
+  artifacts:
+    reports: { dotenv: image.env }
+    expire_in: 24h
