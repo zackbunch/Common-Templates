@@ -44,7 +44,7 @@ default:
     - dock_exec_bash
 
 variables:
-  SPRINT: 125
+  SPRINT: 126
   BUILD_ARGS: |
     SERVER_URL=${CI_SERVER_URL}
     CI_REGISTRY=${CI_REGISTRY}
