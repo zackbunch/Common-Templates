@@ -36,7 +36,7 @@ include:
   - local: glab-release.gitlab-ci.yml
 
 
-stages: [build, scan, deploy]
+stages: [build, scan, release]
 
 default:
   interruptible: true
