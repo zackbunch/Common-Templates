@@ -1,5 +1,5 @@
 gitlab_release:
-  stage: deploy
+  stage: release
   image:
     name: registry.gitlab.com/gitlab-org/release-cli:0.21.0
     entrypoint: [""]
