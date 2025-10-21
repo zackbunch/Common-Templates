@@ -11,7 +11,7 @@ Here we write upgrading notes for brands. It's a team effort to make them as
 straightforward as possible.
  
 ### Removed
-- [GMARM-1zb](http://tickets.projectname.com/browse/PROJECTNAME-XXXX)
+- [GMARM-1zb]
   Removed job level SPRINT.
 
  

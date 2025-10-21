@@ -16,7 +16,7 @@ gitlab_release:
         exit 1
       fi
 
-    # VERSION must exist and exactly match the tag (no 'v' prefix in your scheme)
+    # VERSION must exist and exactly match
     - |
       test -f VERSION || { echo "ERROR: VERSION file missing"; exit 1; }
       VERSION_FILE="$(tr -d ' \t\r\n' < VERSION)"
