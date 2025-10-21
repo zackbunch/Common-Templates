@@ -10,11 +10,10 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 Here we write upgrading notes for brands. It's a team effort to make them as
 straightforward as possible.
  
-### Added
-- [PROJECTNAME-XXXX](http://tickets.projectname.com/browse/PROJECTNAME-XXXX)
-  MINOR Ticket title goes here.
-- [PROJECTNAME-YYYY](http://tickets.projectname.com/browse/PROJECTNAME-YYYY)
-  PATCH Ticket title goes here.
+### Removed
+- [GMARM-1zb](http://tickets.projectname.com/browse/PROJECTNAME-XXXX)
+  Removed job level SPRINT.
+
  
 ### Changed
  

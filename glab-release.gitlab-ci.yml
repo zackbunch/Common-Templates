@@ -1,7 +1,7 @@
 gitlab_release:
   stage: release
   image:
-    name: registry.gitlab.com/gitlab-org/release-cli:latest
+    name: registry.gitlab.com/gitlab-org/release-cli:0.21.0
     entrypoint: [""]
   rules:
     - if: '$GITLAB_RELEASE_DISABLED =~ /(?i)true/'
@@ -10,37 +10,29 @@ gitlab_release:
       when: on_success
     - when: never
   variables:
-    # Must be provided from pipeline or parent include
-    SPRINT: ""
     RELEASE_NOTES_FILE: "release_notes.md"
   before_script:
     - set -euo pipefail
-    # Validate required variables
     - |
-      if [ -z "${SPRINT}" ]; then
+      if [ -z "${SPRINT:-}" ]; then
         echo "ERROR: Missing required variable SPRINT."
-        echo "Set it in your pipeline or trigger (e.g., variables: { SPRINT: 45 })."
+        echo "Set it at the pipeline level or in the trigger (e.g., variables: { SPRINT: 125 })."
         exit 1
       fi
     - export RELEASE_NAME="Version ${CI_COMMIT_TAG} Release - Sprint ${SPRINT}"
-      echo "Release name ${RELEASE_NAME}"
-    # Build notes file from CHANGELOG (fallback to a simple line)
     - |
       if [ -f CHANGELOG.md ]; then
         awk 'BEGIN{p=0} /^## /{if(p) exit; p=1} p' CHANGELOG.md > "$RELEASE_NOTES_FILE" || true
       fi
       [ -s "$RELEASE_NOTES_FILE" ] || printf "Created by CI for %s (%s)\n" "$CI_COMMIT_TAG" "$CI_COMMIT_SHA" > "$RELEASE_NOTES_FILE"
   script:
-    # Create if missing; otherwise update (idempotent reruns)
     - |
       if release-cli list | grep -qx "$CI_COMMIT_TAG"; then
-        echo "Release ${CI_COMMIT_TAG} exists — updating..."
         release-cli update \
           --name "$RELEASE_NAME" \
           --tag-name "$CI_COMMIT_TAG" \
           --description "$RELEASE_NOTES_FILE"
       else
-        echo "Creating release ${CI_COMMIT_TAG}..."
         release-cli create \
           --name "$RELEASE_NAME" \
           --tag-name "$CI_COMMIT_TAG" \
